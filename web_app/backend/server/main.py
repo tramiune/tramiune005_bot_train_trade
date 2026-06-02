@@ -1,23 +1,12 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
+import ccxt
 import pandas as pd
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
-
-# Reuse existing bot modules (Python path trick)
-import sys
-
-ROOT = Path(__file__).resolve().parents[3]  # repo root
-BOT_PKG_ROOT = ROOT / "trading_bot"  # contains "app/" package
-if str(BOT_PKG_ROOT) not in sys.path:
-    sys.path.insert(0, str(BOT_PKG_ROOT))
-
-from app.backtest.backtester import Backtester  # noqa: E402
-from app.data.ohlcv_provider import get_provider  # noqa: E402
 
 app = FastAPI(title="Trading Web Backend", version="0.1.0")
 
@@ -48,6 +37,54 @@ def _df_to_lwc(df: pd.DataFrame) -> list[dict]:
     return out
 
 
+def _sma(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n, min_periods=n).mean()
+
+
+def _rolling_low(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n, min_periods=n).min()
+
+
+def _rolling_high(s: pd.Series, n: int) -> pd.Series:
+    return s.rolling(n, min_periods=n).max()
+
+
+def _fetch_ohlcv_ccxt(exchange_id: str, symbol: str, timeframe: str, since: datetime, limit: int) -> pd.DataFrame:
+    ex_cls = getattr(ccxt, exchange_id, None)
+    if ex_cls is None:
+        raise ValueError(f"unknown_exchange:{exchange_id}")
+    ex = ex_cls({"enableRateLimit": True})
+    ex.load_markets()
+    since_ms = int(since.timestamp() * 1000)
+
+    rows: list[list] = []
+    # ccxt may cap limit per request; loop until we cover the range
+    while True:
+        batch = ex.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=min(int(limit), 2000))
+        if not batch:
+            break
+        rows.extend(batch)
+        last_ms = int(batch[-1][0])
+        # advance 1ms to avoid duplicates
+        next_ms = last_ms + 1
+        if next_ms <= since_ms:
+            break
+        since_ms = next_ms
+        if len(batch) < 2:
+            break
+        if len(rows) >= int(limit):
+            break
+
+    if not rows:
+        return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
+
+    df = pd.DataFrame(rows, columns=["timestamp_ms", "open", "high", "low", "close", "volume"])
+    df["timestamp"] = pd.to_datetime(df["timestamp_ms"], unit="ms", utc=True)
+    df = df.drop(columns=["timestamp_ms"])
+    df = df.sort_values("timestamp").reset_index(drop=True)
+    return df
+
+
 @app.get("/api/symbols")
 def symbols():
     return {
@@ -61,13 +98,20 @@ def ohlcv(
     symbol: str = Query(...),
     timeframe: Timeframe = Query("15m"),
     days_back: int = Query(30, ge=1, le=3650),
-    provider: str = Query("ccxt"),
     exchange: str = Query("binance"),
     limit: int = Query(2000, ge=100, le=50000),
+    end_time: Optional[int] = Query(
+        None, description="Unix seconds (UTC). If set, return candles strictly before this time."
+    ),
 ):
-    p = get_provider(provider, exchange_id=exchange) if provider == "ccxt" else get_provider(provider)
-    since = datetime.now(timezone.utc) - timedelta(days=int(days_back))
-    df = p.fetch_ohlcv(symbol.upper(), timeframe, limit=int(limit), since=since)
+    end_dt = datetime.now(timezone.utc) if end_time is None else datetime.fromtimestamp(int(end_time), tz=timezone.utc)
+    since = end_dt - timedelta(days=int(days_back))
+    # Fetch a wider window then slice to the requested end_time & limit.
+    df = _fetch_ohlcv_ccxt(exchange, symbol.upper(), timeframe, since=since, limit=int(limit) * 3)
+    if end_time is not None and not df.empty:
+        df = df[df["timestamp"] < end_dt]
+    if not df.empty:
+        df = df.tail(int(limit)).reset_index(drop=True)
     return {"symbol": symbol.upper(), "timeframe": timeframe, "candles": _df_to_lwc(df)}
 
 
@@ -76,94 +120,123 @@ def backtest_sma_cross(
     symbol: str = Query(...),
     timeframe: Timeframe = Query("15m"),
     days_back: int = Query(180, ge=10, le=3650),
-    provider: str = Query("ccxt"),
     exchange: str = Query("binance"),
     fast: int = Query(20, ge=2, le=200),
     slow: int = Query(50, ge=5, le=500),
     rr: float = Query(2.0, ge=1.0, le=10.0),
     sl_lookback: int = Query(10, ge=2, le=200),
-    tp_lookback: int = Query(50, ge=5, le=500),
 ):
-    from app.rules.indicators import rolling_high, rolling_low, sma  # noqa: E402
-    from app.rules.base import TradeSignal  # noqa: E402
-
-    p = get_provider(provider, exchange_id=exchange) if provider == "ccxt" else get_provider(provider)
     since = datetime.now(timezone.utc) - timedelta(days=int(days_back))
-    df = p.fetch_ohlcv(symbol.upper(), timeframe, limit=50000, since=since)
+    df = _fetch_ohlcv_ccxt(exchange, symbol.upper(), timeframe, since=since, limit=50000)
     if df.empty:
         return {"error": "no_data"}
 
     close = df["close"].astype(float)
-    s_fast = sma(close, int(fast))
-    s_slow = sma(close, int(slow))
+    s_fast = _sma(close, int(fast))
+    s_slow = _sma(close, int(slow))
 
     cross_up = (s_fast > s_slow) & (s_fast.shift(1) <= s_slow.shift(1))
     cross_dn = (s_fast < s_slow) & (s_fast.shift(1) >= s_slow.shift(1))
 
-    sl_low = rolling_low(df["low"].astype(float), int(sl_lookback)).shift(1)
-    sl_high = rolling_high(df["high"].astype(float), int(sl_lookback)).shift(1)
-    tp_high = rolling_high(df["high"].astype(float), int(tp_lookback)).shift(1)
-    tp_low = rolling_low(df["low"].astype(float), int(tp_lookback)).shift(1)
+    lows = df["low"].astype(float)
+    highs = df["high"].astype(float)
+    sl_low = _rolling_low(lows, int(sl_lookback)).shift(1)
+    sl_high = _rolling_high(highs, int(sl_lookback)).shift(1)
 
-    signals: list[TradeSignal] = []
-    for i in range(len(df)):
-        if i < max(fast, slow, sl_lookback, tp_lookback) + 2:
+    trades: list[dict] = []
+    i = 0
+    min_i = max(int(fast), int(slow), int(sl_lookback)) + 2
+    while i < len(df):
+        if i < min_i:
+            i += 1
             continue
+
         entry = float(close.iloc[i])
+        ts_entry = pd.to_datetime(df["timestamp"].iloc[i], utc=True)
+
+        side: str | None = None
+        sl: float | None = None
         if bool(cross_up.iloc[i]):
+            side = "LONG"
             sl = float(sl_low.iloc[i]) if pd.notna(sl_low.iloc[i]) else None
-            tp = float(tp_high.iloc[i]) if pd.notna(tp_high.iloc[i]) else None
-            if sl is None or tp is None:
-                continue
-            risk = abs(entry - sl)
-            reward = abs(tp - entry)
-            if risk <= 0 or reward / risk < float(rr):
-                continue
-            signals.append(
-                TradeSignal(
-                    side="LONG",
-                    entry_idx=i,
-                    entry_price=entry,
-                    stop_loss=float(sl),
-                    take_profit=float(tp),
-                    rule_name=f"sma_cross({fast},{slow})",
-                    meta={},
-                )
-            )
         elif bool(cross_dn.iloc[i]):
+            side = "SHORT"
             sl = float(sl_high.iloc[i]) if pd.notna(sl_high.iloc[i]) else None
-            tp = float(tp_low.iloc[i]) if pd.notna(tp_low.iloc[i]) else None
-            if sl is None or tp is None:
-                continue
-            risk = abs(entry - sl)
-            reward = abs(entry - tp)
-            if risk <= 0 or reward / risk < float(rr):
-                continue
-            signals.append(
-                TradeSignal(
-                    side="SHORT",
-                    entry_idx=i,
-                    entry_price=entry,
-                    stop_loss=float(sl),
-                    take_profit=float(tp),
-                    rule_name=f"sma_cross({fast},{slow})",
-                    meta={},
-                )
-            )
 
-    bt = Backtester(max_hold_bars=None)
-    trades = bt.run(df, signals)
+        if side is None or sl is None:
+            i += 1
+            continue
 
-    markers = []
+        risk = abs(entry - sl)
+        if risk <= 0:
+            i += 1
+            continue
+
+        tp = entry + float(rr) * risk if side == "LONG" else entry - float(rr) * risk
+
+        exit_idx: int | None = None
+        result: str | None = None
+        exit_price: float | None = None
+
+        j = i + 1
+        while j < len(df):
+            hi = float(highs.iloc[j])
+            lo = float(lows.iloc[j])
+            if side == "LONG":
+                sl_hit = lo <= sl
+                tp_hit = hi >= tp
+                if sl_hit and tp_hit:
+                    # ambiguous; assume worst-case for safety
+                    exit_idx, exit_price, result = j, float(sl), "LOSS"
+                    break
+                if sl_hit:
+                    exit_idx, exit_price, result = j, float(sl), "LOSS"
+                    break
+                if tp_hit:
+                    exit_idx, exit_price, result = j, float(tp), "WIN"
+                    break
+            else:
+                sl_hit = hi >= sl
+                tp_hit = lo <= tp
+                if sl_hit and tp_hit:
+                    exit_idx, exit_price, result = j, float(sl), "LOSS"
+                    break
+                if sl_hit:
+                    exit_idx, exit_price, result = j, float(sl), "LOSS"
+                    break
+                if tp_hit:
+                    exit_idx, exit_price, result = j, float(tp), "WIN"
+                    break
+            j += 1
+
+        if exit_idx is None:
+            i += 1
+            continue
+
+        r_multiple = (abs(exit_price - entry) / risk) * (1 if result == "WIN" else -1)
+        trades.append(
+            {
+                "side": side,
+                "entry_idx": i,
+                "entry_ts": ts_entry,
+                "r_multiple": float(r_multiple),
+                "result": result,
+            }
+        )
+
+        # move forward to avoid overlapping trades
+        i = exit_idx + 1
+
+    markers: list[dict] = []
     for t in trades:
-        ts = pd.to_datetime(df["timestamp"].iloc[t.entry_idx], utc=True)
+        ts = pd.to_datetime(t["entry_ts"], utc=True)
         markers.append(
             {
                 "time": int(ts.timestamp()),
-                "position": "belowBar" if t.side == "LONG" else "aboveBar",
-                "color": "#26a69a" if t.side == "LONG" else "#ef5350",
-                "shape": "arrowUp" if t.side == "LONG" else "arrowDown",
-                "text": f"{t.side} R={t.r_multiple:+.2f}",
+                "position": "belowBar" if t["side"] == "LONG" else "aboveBar",
+                "color": "#26a69a" if t["side"] == "LONG" else "#ef5350",
+                "shape": "arrowUp" if t["side"] == "LONG" else "arrowDown",
+                "text": f"{t['side']} R={t['r_multiple']:+.2f}",
             }
         )
 
@@ -174,8 +247,8 @@ def backtest_sma_cross(
         "markers": markers,
         "summary": {
             "trades": len(trades),
-            "avg_r": (sum(x.r_multiple for x in trades) / len(trades)) if trades else 0.0,
-            "winrate": (100.0 * sum(1 for x in trades if x.result == "WIN") / len(trades)) if trades else 0.0,
+            "avg_r": (sum(float(x["r_multiple"]) for x in trades) / len(trades)) if trades else 0.0,
+            "winrate": (100.0 * sum(1 for x in trades if x["result"] == "WIN") / len(trades)) if trades else 0.0,
         },
     }
 

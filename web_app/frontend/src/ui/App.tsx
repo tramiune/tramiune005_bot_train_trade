@@ -5,6 +5,8 @@ import {
   IChartApi,
   ISeriesApi,
   CandlestickSeries,
+  UTCTimestamp,
+  type CandlestickData,
 } from 'lightweight-charts'
 
 type Timeframe = '1m' | '5m' | '15m' | '1h' | '4h' | '1d'
@@ -18,15 +20,54 @@ type Marker = {
   text: string
 }
 
+function tfToMinutes(tf: Timeframe): number {
+  switch (tf) {
+    case '1m':
+      return 1
+    case '5m':
+      return 5
+    case '15m':
+      return 15
+    case '1h':
+      return 60
+    case '4h':
+      return 240
+    case '1d':
+      return 1440
+  }
+}
+
+function chunkSize(tf: Timeframe) {
+  // Aim for "a bit more than viewport" per chunk.
+  const m = tfToMinutes(tf)
+  if (m <= 1) return 1200
+  if (m <= 5) return 1500
+  if (m <= 15) return 2000
+  return 2500
+}
+
+function daysForCandles(tf: Timeframe, candles: number) {
+  const minutes = candles * tfToMinutes(tf)
+  return Math.max(1, Math.ceil(minutes / (24 * 60)))
+}
+
 function apiBase() {
   const host = window.location.hostname || 'localhost'
   return `http://${host}:8000`
+}
+
+function toChartCandle(c: Candle): CandlestickData<UTCTimestamp> {
+  return { ...c, time: c.time as UTCTimestamp }
 }
 
 export function App() {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const seriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null)
+  const candlesRef = useRef<Candle[]>([])
+  const oldestTimeRef = useRef<number | null>(null)
+  const loadingMoreRef = useRef(false)
+  const rangeDebounceRef = useRef<number | null>(null)
 
   const [symbols, setSymbols] = useState<string[]>([])
   const [symbol, setSymbol] = useState('BTCUSDT')
@@ -81,9 +122,28 @@ export function App() {
       chartRef.current = chart
       seriesRef.current = series
 
+      const onRange = () => {
+        if (rangeDebounceRef.current) window.clearTimeout(rangeDebounceRef.current)
+        rangeDebounceRef.current = window.setTimeout(() => {
+          const ts = chartRef.current?.timeScale()
+          if (!ts) return
+          const r: any = ts.getVisibleRange?.()
+          const from = r?.from
+          const oldest = oldestTimeRef.current
+          if (!from || !oldest) return
+          // If user is close to the left edge, load older data
+          const threshold = tfToMinutes(timeframe) * 60 * 200 // ~200 bars in seconds
+          if (from < oldest + threshold) void loadMoreOlder()
+        }, 200)
+      }
+
+      // lightweight-charts timeScale subscription (v4/v5)
+      ;(chart.timeScale() as any).subscribeVisibleTimeRangeChange?.(onRange)
+
       window.addEventListener('resize', resize)
       return () => {
         window.removeEventListener('resize', resize)
+        ;(chart.timeScale() as any).unsubscribeVisibleTimeRangeChange?.(onRange)
         chart.remove()
         chartRef.current = null
         seriesRef.current = null
@@ -95,30 +155,79 @@ export function App() {
     }
   }, [])
 
+  const fetchChunk = async (opts: { endTime?: number }) => {
+    const url = new URL(`${apiBase()}/api/ohlcv`)
+    url.searchParams.set('symbol', symbol)
+    url.searchParams.set('timeframe', timeframe)
+    url.searchParams.set('limit', String(chunkSize(timeframe)))
+    url.searchParams.set('days_back', String(daysForCandles(timeframe, chunkSize(timeframe))))
+    url.searchParams.set('exchange', 'binance')
+    if (opts.endTime) url.searchParams.set('end_time', String(opts.endTime))
+
+    const res = await fetch(url.toString())
+    return (await res.json()) as any
+  }
+
   const loadCandles = async () => {
     setStatus('loading candles...')
     setSummary(null)
     setError('')
-    const url = new URL(`${apiBase()}/api/ohlcv`)
-    url.searchParams.set('symbol', symbol)
-    url.searchParams.set('timeframe', timeframe)
-    url.searchParams.set('days_back', String(daysBack))
-    url.searchParams.set('provider', 'ccxt')
-    url.searchParams.set('exchange', 'binance')
     let data: any
     try {
-      const res = await fetch(url.toString())
-      data = await res.json()
+      data = await fetchChunk({})
     } catch (e: any) {
       setError(`Cannot reach backend at ${apiBase()} (ohlcv).`)
       setStatus('error')
       return
     }
     const candles: Candle[] = data.candles ?? []
-    seriesRef.current?.setData(candles)
-    seriesRef.current?.setMarkers([])
+    candlesRef.current = candles
+    oldestTimeRef.current = candles.length ? candles[0].time : null
+    seriesRef.current?.setData(candles.map(toChartCandle))
+    ;(seriesRef.current as any)?.setMarkers?.([])
     chartRef.current?.timeScale().fitContent()
     setStatus(`loaded ${candles.length} candles`)
+  }
+
+  const loadMoreOlder = async () => {
+    if (loadingMoreRef.current) return
+    const oldest = oldestTimeRef.current
+    if (!oldest) return
+
+    loadingMoreRef.current = true
+    setStatus('loading more history...')
+    try {
+      const data = await fetchChunk({ endTime: oldest })
+      const older: Candle[] = data.candles ?? []
+      if (!older.length) {
+        setStatus('no more history')
+        return
+      }
+
+      // Deduplicate overlap
+      const cur = candlesRef.current
+      const newestOlderTime = older[older.length - 1]?.time
+      const dedupedOlder = newestOlderTime && cur.length && newestOlderTime >= cur[0].time
+        ? older.filter((c) => c.time < cur[0].time)
+        : older
+
+      if (!dedupedOlder.length) {
+        setStatus('history up to date')
+        return
+      }
+
+      const merged = [...dedupedOlder, ...cur]
+      candlesRef.current = merged
+      oldestTimeRef.current = merged[0]?.time ?? oldestTimeRef.current
+
+      seriesRef.current?.setData(merged.map(toChartCandle))
+      setStatus(`loaded ${merged.length} candles`)
+    } catch (e: any) {
+      setError(`Cannot reach backend at ${apiBase()} (ohlcv).`)
+      setStatus('error')
+    } finally {
+      loadingMoreRef.current = false
+    }
   }
 
   const runBacktest = async () => {
@@ -140,8 +249,8 @@ export function App() {
     }
     const candles: Candle[] = data.candles ?? []
     const markers: Marker[] = data.markers ?? []
-    seriesRef.current?.setData(candles)
-    seriesRef.current?.setMarkers(markers as any)
+    seriesRef.current?.setData(candles.map(toChartCandle))
+    ;(seriesRef.current as any)?.setMarkers?.(markers as any)
     chartRef.current?.timeScale().fitContent()
     setSummary(data.summary ?? null)
     setStatus(`backtest done (${markers.length} entries)`)
