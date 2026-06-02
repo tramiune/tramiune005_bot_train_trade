@@ -1,0 +1,45 @@
+html, body {
+  height: 100%;
+  margin: 0;
+  background: #0e1117;
+  color: #e0e0ff;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+}
+
+.wrap {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100vh;
+}
+
+.topbar {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #1f2937;
+  background: #0b1220;
+}
+
+select, button, input {
+  background: #111827;
+  color: #e0e0ff;
+  border: 1px solid #283244;
+  padding: 8px 10px;
+  border-radius: 8px;
+}
+
+button {
+  cursor: pointer;
+}
+
+.chart {
+  position: relative;
+}
+
+.stat {
+  margin-left: auto;
+  font-size: 12px;
+  opacity: 0.85;
+}
+

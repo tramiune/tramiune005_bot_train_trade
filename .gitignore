@@ -1,0 +1,28 @@
+__pycache__/
+*.py[cod]
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.env
+.env.*
+
+# Python venv
+.venv/
+venv/
+ENV/
+env/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Runtime data
+data/
+trading_bot/data/
+trading_bot/data/**
+web_app/**/.DS_Store
+
