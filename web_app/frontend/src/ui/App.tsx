@@ -73,6 +73,8 @@ export function App() {
   const [symbol, setSymbol] = useState('BTCUSDT')
   const [timeframe, setTimeframe] = useState<Timeframe>('15m')
   const [daysBack, setDaysBack] = useState(30)
+  const [rr, setRr] = useState(1.5)
+  const [strategy, setStrategy] = useState('sma_cross')
   const [status, setStatus] = useState<string>('ready')
   const [error, setError] = useState<string>('')
   const [summary, setSummary] = useState<{ trades: number; avg_r: number; winrate: number } | null>(null)
@@ -233,11 +235,11 @@ export function App() {
   const runBacktest = async () => {
     setStatus('backtesting...')
     setError('')
-    const url = new URL(`${apiBase()}/api/backtest/sma_cross`)
+    const url = new URL(`${apiBase()}/api/backtest/${strategy}`)
     url.searchParams.set('symbol', symbol)
     url.searchParams.set('timeframe', timeframe)
     url.searchParams.set('days_back', String(Math.max(daysBack, 180)))
-    url.searchParams.set('rr', '2.0')
+    url.searchParams.set('rr', String(rr))
     let data: any
     try {
       const res = await fetch(url.toString(), { method: 'POST' })
@@ -275,6 +277,12 @@ export function App() {
           ))}
         </select>
 
+        <select value={strategy} onChange={(e) => setStrategy(e.target.value)} style={{ padding: '8px' }}>
+          <option value="sma_cross">SMA Cross (Trend)</option>
+          <option value="smc">Smart Money (Dip Buy)</option>
+          <option value="eth_squeeze">ETH Squeeze (Breakout)</option>
+        </select>
+
         <select value={timeframe} onChange={(e) => setTimeframe(e.target.value as Timeframe)}>
           {tfOptions.map((tf) => (
             <option key={tf} value={tf}>
@@ -290,6 +298,18 @@ export function App() {
           value={daysBack}
           onChange={(e) => setDaysBack(Number(e.target.value))}
           style={{ width: 110 }}
+          title="Days Back"
+        />
+
+        <input
+          type="number"
+          step="0.1"
+          min={0.5}
+          max={10}
+          value={rr}
+          onChange={(e) => setRr(Number(e.target.value))}
+          style={{ width: 70 }}
+          title="Risk/Reward (RR)"
         />
 
         <button onClick={loadCandles}>Reload</button>
