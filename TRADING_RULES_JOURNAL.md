@@ -58,3 +58,26 @@ Built specifically for Ethereum (ETH) to catch massive trend continuations with 
 6. **Momentum Backing (RSI/Session)**: The highest probability breakouts happen during the London Session (9h-13h UTC) when pre-breakout RSI is already overbought (> 70).
 
 **ETH Result**: ~44.8% Winrate at 5.0 RR over 4 years. (Incredible profitability, but requires iron discipline to handle long periods with no trades).
+
+## 3. SOLANA Mid-Week Sniper (Quant 1H Retest) - TỐI ƯU HÓA RR 15.0
+
+**Triết lý:** Không nhảy vào bắt Breakout vì rất dễ dính Fakeout. Thay vào đó, kiên nhẫn đợi cá mập kéo giá (Displacement) tạo sóng Uptrend, sau đó chờ giá điều chỉnh (Pullback) chạm lại EMA 200 để "Đón khách" thì nhảy vào.
+
+**Khung thời gian:** 1 Giờ (1H).
+**Cặp giao dịch:** SOL/USDT.
+**Tỷ lệ R:R:** 15.0 (Cực gắt).
+
+**Bộ Lọc Phép Thuật (Magic Filters):**
+1. **Bitcoin Macro Trend:** BẮT BUỘC giá BTC phải đang nằm TRÊN đường EMA 200 khung 1H. (Không bao giờ mua Altcoin nếu BTC đang sập).
+2. **Liquidity Rhythm (Nhịp điệu thanh khoản):** BẮT BUỘC lệnh vào phải rơi vào Thứ 3, Thứ 4, Thứ 5. Tuyệt đối cấm đánh Thứ 2 (Fakeout đầu tuần) và Thứ 6, T7, CN (Cạn thanh khoản).
+3. **Retest Speed (Tốc độ đón khách):** Kể từ lúc Breakout lên trên EMA 200, phải mất ít nhất 20 giờ (20 nến) mới được chạm lại. Chạm sớm hơn là do lực xả.
+4. **Volume & Pinbar:** Nến chạm EMA 200 phải đóng cửa ở Top 40% (Rút râu mạnh) và Volume phải lớn hơn 1.2x mức trung bình.
+
+**Quản trị Rủi Ro:**
+- **Stoploss:** 1.5 * ATR(14). (Đặt dưới râu nến một khoảng an toàn).
+- **Take Profit:** Gấp 15 lần khoảng cách SL.
+
+**Hiệu suất giả lập (4 năm):**
+- Winrate: **33.3%**
+- Net Profit: **+78.0 R**
+- Tần suất: Rất hiếm (Chỉ vài tháng mới có 1 lệnh), nhưng trúng là x15.
