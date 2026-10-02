@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_BASE = `http://${window.location.hostname}:8000/api`;
 
-const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void}> = ({onTradeClick}) => {
+const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void, focusedTrade?: any}> = ({onTradeClick, focusedTrade}) => {
     const [trades, setTrades] = useState<any[]>([]);
 
     useEffect(() => {
@@ -56,7 +56,7 @@ const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void}> = ({onTradeC
                             </tr>
                         ) : (
                             trades.map((trade, idx) => (
-                                <tr key={idx} onClick={() => onTradeClick && onTradeClick(trade)} className="border-b border-gray-700 hover:bg-gray-700 cursor-pointer">
+                                <tr key={idx} onClick={() => onTradeClick && onTradeClick(trade)} className={`border-b border-gray-700 cursor-pointer ${focusedTrade?.id === trade.id ? "bg-yellow-900/50 outline outline-1 outline-yellow-500" : "hover:bg-gray-700"}`}>
                                     <td className="px-4 py-3 text-gray-500">{trades.length - idx}</td>
                                     <td className="px-4 py-3">{new Date(trade.entry_time).toLocaleString()}</td>
                                     <td className="px-4 py-3 text-white font-medium">{trade.symbol}</td>

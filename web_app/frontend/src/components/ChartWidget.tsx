@@ -21,7 +21,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     
     // Price line references (changed to series references)
     const tpSeriesRef = useRef<any>(null);
-    const slSeriesRef = useRef<any>(null);
+    const tradeSeriesRef = useRef<any[]>([]);
     const markersPrimitiveRef = useRef<any>(null);
     
     const candleDataRef = useRef<any[]>([]);
@@ -35,61 +35,76 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const [isBacktestLoading, setIsBacktestLoading] = useState<boolean>(true);
     const [activeTradeId, setActiveTradeId] = useState<number | null>(null);
 
-    const drawTradeLines = (trade: any) => {
-        if (!chartRef.current || !trade) return;
+    const renderVisibleTrades = (timeRange: any) => {
+        if (!timeRange || !frontendCache[symbol] || !chartRef.current) return;
         
-        // Remove old series if they exist
-        if (tpSeriesRef.current) {
-            try { chartRef.current.removeSeries(tpSeriesRef.current); } catch(e){}
-            tpSeriesRef.current = null;
-        }
-        if (slSeriesRef.current) {
-            try { chartRef.current.removeSeries(slSeriesRef.current); } catch(e){}
-            slSeriesRef.current = null;
-        }
+        const fromTime = timeRange.from;
+        const toTime = timeRange.to;
         
-        const endTime = trade.exit_time || trade.time;
-        const isLong = trade.side === 'LONG';
-        
-        // Create TP Baseline Series
-        tpSeriesRef.current = chartRef.current.addSeries(BaselineSeries, {
-            baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-            topFillColor2: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-            topLineColor: isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-            bottomLineColor: !isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
-            lineWidth: 3,
-            lineStyle: 0,
-            lastValueVisible: false,
-            priceLineVisible: false,
+        const visibleTrades = frontendCache[symbol].filter((trade: any) => {
+             const endTime = trade.exit_time || trade.time;
+             return trade.time <= toTime && endTime >= fromTime;
         });
         
-        // Create SL Baseline Series
-        slSeriesRef.current = chartRef.current.addSeries(BaselineSeries, {
-            baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-            topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-            topLineColor: !isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-            bottomLineColor: isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
-            lineWidth: 3,
-            lineStyle: 0,
-            lastValueVisible: false,
-            priceLineVisible: false,
+        const currentTradeIds = tradeSeriesRef.current.map(s => s.tradeId).join(',');
+        const newTradeIds = visibleTrades.map(t => t.time).join(',');
+        
+        if (currentTradeIds === newTradeIds) return;
+        
+        tradeSeriesRef.current.forEach(s => {
+            try { chartRef.current?.removeSeries(s.tpSeries); } catch(e){}
+            try { chartRef.current?.removeSeries(s.slSeries); } catch(e){}
         });
+        tradeSeriesRef.current = [];
         
-        tpSeriesRef.current.setData([
-            { time: trade.time, value: trade.tp },
-            { time: endTime, value: trade.tp }
-        ]);
-        
-        slSeriesRef.current.setData([
-            { time: trade.time, value: trade.sl },
-            { time: endTime, value: trade.sl }
-        ]);
+        visibleTrades.forEach((trade: any) => {
+            const endTime = trade.exit_time || trade.time;
+            const isLong = trade.side === 'LONG';
+            
+            const tpSeries = chartRef.current!.addSeries(BaselineSeries, {
+                baseValue: { type: 'price', price: trade.entry },
+                topFillColor1: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topFillColor2: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topLineColor: isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomLineColor: !isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
+                lineWidth: 3,
+                lineStyle: 0,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+            
+            const slSeries = chartRef.current!.addSeries(BaselineSeries, {
+                baseValue: { type: 'price', price: trade.entry },
+                topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topLineColor: !isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomLineColor: isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
+                lineWidth: 3,
+                lineStyle: 0,
+                lastValueVisible: false,
+                priceLineVisible: false,
+            });
+            
+            tpSeries.setData([
+                { time: trade.time, value: trade.tp },
+                { time: endTime, value: trade.tp }
+            ]);
+            
+            slSeries.setData([
+                { time: trade.time, value: trade.sl },
+                { time: endTime, value: trade.sl }
+            ]);
+            
+            tradeSeriesRef.current.push({
+                tradeId: trade.time,
+                tpSeries,
+                slSeries
+            });
+        });
     };
 
     const reapplyMarkersAndLines = () => {
@@ -113,7 +128,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }
             
             if (activeTradeRef.current) {
-                drawTradeLines(activeTradeRef.current);
+                
             }
         }
     };
@@ -125,7 +140,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         try {
             let url = `http://${window.location.hostname}:8000/api/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;
             if (endTime) {
-                url += `&endTime=${endTime}`;
+                url += `&endTime=${endTime * 1000}`;
             }
             
             const res = await axios.get(url);
@@ -139,8 +154,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             const formattedData = data;
 
             if (endTime) {
-                const newBatch = formattedData.filter((f: any) => !candleDataRef.current.find((c: any) => c.time === f.time));
-                candleDataRef.current = [...newBatch, ...candleDataRef.current];
+                const newData = [...formattedData, ...candleDataRef.current];
+                const uniqueData = Array.from(new Map(newData.map(item => [item.time, item])).values());
+                uniqueData.sort((a: any, b: any) => a.time - b.time);
+                
+                candleDataRef.current = uniqueData;
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
                     if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(candleDataRef.current, 20));
@@ -174,21 +192,26 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
 
         setIsBacktestLoading(true);
         try {
-            let url = `http://${window.location.hostname}:8000/api/backtest?symbol=${symbol.replace('USDT', '/USDT')}`;
-            if (symbol === 'DOGEUSDT') {
-                url = `http://${window.location.hostname}:8000/api/backtest/doge_inverse?compounding=true&risk_pct=30.0`;
-            }
+            const url = `http://${window.location.hostname}:8000/api/trades`;
             const res = await axios.get(url);
-            const trades = symbol === 'DOGEUSDT' ? res.data.data.trades.map((t: any) => ({
-                time: t.entry_time / 1000,
+            
+            // Filter by symbol
+            const targetSymbol = symbol.replace('USDT', '/USDT');
+            const symbolTrades = res.data.filter((t: any) => t.symbol === targetSymbol);
+            
+            const trades = symbolTrades.map((t: any) => ({
+                time: new Date(t.entry_time).getTime() / 1000,
                 side: t.side,
                 entry: t.entry_price,
-                sl: t.side === 'LONG' ? t.entry_price * 0.85 : t.entry_price * 1.15,
-                tp: t.side === 'LONG' ? t.entry_price * 1.05 : t.entry_price * 0.95,
-                exit_time: t.exit_time / 1000,
+                sl: t.stop_loss || (t.side === 'LONG' ? t.entry_price * 0.85 : t.entry_price * 1.15),
+                tp: t.take_profit || (t.side === 'LONG' ? t.entry_price * 1.05 : t.entry_price * 0.95),
+                exit_time: t.exit_time ? new Date(t.exit_time).getTime() / 1000 : undefined,
                 pnl: t.pnl,
                 balance_after: t.balance_after
-            })) : res.data;
+            }));
+            
+            // Sort trades by time just to be safe
+            trades.sort((a: any, b: any) => a.time - b.time);
             
             frontendCache[symbol] = trades;
             renderBacktest(trades);
@@ -226,17 +249,16 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     };
 
     const handleGoToRealTime = () => {
-        if (!chartRef.current || candleDataRef.current.length === 0) return;
+        if (!chartRef.current) return;
         setActiveTradeId(null);
-        if (tpSeriesRef.current) {
-            try { chartRef.current.removeSeries(tpSeriesRef.current); } catch(e){}
-            tpSeriesRef.current = null;
-        }
-        if (slSeriesRef.current) {
-            try { chartRef.current.removeSeries(slSeriesRef.current); } catch(e){}
-            slSeriesRef.current = null;
-        }
-        const lastCandle = candleDataRef.current[candleDataRef.current.length - 1];
+        activeTradeRef.current = null;
+        
+        tradeSeriesRef.current.forEach(s => {
+            try { chartRef.current?.removeSeries(s.tpSeries); } catch(e){}
+            try { chartRef.current?.removeSeries(s.slSeries); } catch(e){}
+        });
+        tradeSeriesRef.current = [];
+        
         chartRef.current.timeScale().scrollToRealTime();
         if (seriesRef.current) {
             seriesRef.current.priceScale().applyOptions({ autoScale: true });
@@ -273,7 +295,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }
         }
         
-        drawTradeLines(trade);
         
         const padding = symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600;
         const endTime = trade.exit_time || trade.time;
@@ -414,9 +435,16 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
 
         chart.timeScale().subscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChanged);
 
+        const onVisibleTimeRangeChanged = (timeRange: any) => {
+            renderVisibleTrades(timeRange);
+        };
+
+        chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChanged);
+
         return () => {
             ws.close();
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChanged);
+            chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChanged);
             chart.remove();
         };
     }, [symbol]);

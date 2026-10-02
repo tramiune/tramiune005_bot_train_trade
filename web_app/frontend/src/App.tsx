@@ -50,7 +50,7 @@ function App() {
         </div>
 
         <div className="mt-8">
-          <TradeHistory onTradeClick={(trade: any) => setFocusedTrade(trade)} />
+          <TradeHistory onTradeClick={(trade: any) => setFocusedTrade(trade)} focusedTrade={focusedTrade} />
         </div>
       </div>
     </div>
