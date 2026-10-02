@@ -5,7 +5,7 @@ import TradeHistory from './components/TradeHistory';
 import { Activity } from 'lucide-react';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('SOLUSDT');
+  const [activeTab, setActiveTab] = useState('DOGEUSDT');
 
   return (
     <div className="min-h-screen bg-[#0B0E14] text-gray-200 font-sans p-6">
@@ -32,7 +32,7 @@ function App() {
             
             {/* Tabs */}
             <div className="flex space-x-2">
-              {['SOLUSDT', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT'].map((tab) => (
+              {['DOGEUSDT'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
