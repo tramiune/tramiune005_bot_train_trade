@@ -392,6 +392,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             borderVisible: false,
             wickUpColor: '#26a69a',
             wickDownColor: '#ef5350',
+            priceFormat: {
+                type: 'price',
+                precision: 4,
+                minMove: 0.0001,
+            },
             autoscaleInfoProvider: (original: () => any) => {
                 const res = original();
                 if (res !== null && activeTradeRef.current) {
