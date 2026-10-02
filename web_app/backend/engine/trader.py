@@ -99,14 +99,8 @@ class TradingEngine:
         
         # Ensure initial DB configs
         db = SessionLocal()
-        if not db.query(BotConfig).filter_by(strategy="SOL_GOD_MODE").first():
-            db.add(BotConfig(strategy="SOL_GOD_MODE", is_active=True, risk_per_trade_pct=3.0))
-        if not db.query(BotConfig).filter_by(strategy="DOGE_RR25").first():
-            db.add(BotConfig(strategy="DOGE_RR25", is_active=True, risk_per_trade_pct=3.0))
-        if not db.query(BotConfig).filter_by(strategy="BTC_RR2").first():
-            db.add(BotConfig(strategy="BTC_RR2", is_active=True, risk_per_trade_pct=3.0))
-        if not db.query(BotConfig).filter_by(strategy="XRP_PURE_ROBUST").first():
-            db.add(BotConfig(strategy="XRP_PURE_ROBUST", is_active=True, risk_per_trade_pct=3.0))
+        if not db.query(BotConfig).filter_by(strategy="DOGE_3M_DEGEN").first():
+            db.add(BotConfig(strategy="DOGE_3M_DEGEN", is_active=True, risk_per_trade_pct=30.0))
         db.commit()
         db.close()
         

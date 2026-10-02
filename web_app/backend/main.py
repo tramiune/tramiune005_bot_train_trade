@@ -9,6 +9,8 @@ from models import Trade, SystemLog, BotConfig
 from engine.trader import TradingEngine
 from contextlib import asynccontextmanager
 from fetch_more import fetch_lots_of_klines
+from kline_cache import prefetch_klines, KLINES_CACHE
+import asyncio
 import ccxt.async_support as ccxt
 from datetime import datetime
 
@@ -22,6 +24,9 @@ async def lifespan(app: FastAPI):
     import asyncio
     engine_instance.is_running = True
     asyncio.create_task(engine_instance.run_loop())
+    # Start prefetching in background
+    asyncio.create_task(prefetch_klines())
+    
     yield
     engine_instance.stop()
     await engine_instance.exchange.close()
@@ -56,7 +61,7 @@ async def stop_bot():
 
 @app.get("/api/trades")
 def get_trades(db: Session = Depends(get_db)):
-    return db.query(Trade).order_by(Trade.entry_time.desc()).limit(50).all()
+    return db.query(Trade).order_by(Trade.entry_time.desc()).all()
 
 @app.get("/api/configs")
 def get_configs(db: Session = Depends(get_db)):
@@ -132,3 +137,27 @@ async def run_backtest(symbol: str, db: Session = Depends(get_db)):
             "exit_time": t.exit_time.timestamp() if t.exit_time else t.entry_time.timestamp()
         })
     return result
+
+@app.get("/api/klines")
+def get_klines(symbol: str, interval: str, limit: int = 1000, endTime: int = None):
+    cache_key = f"{symbol}_{interval}"
+    if cache_key not in KLINES_CACHE:
+        return {"status": "loading", "data": []}
+        
+    data = KLINES_CACHE[cache_key]
+    
+    if endTime:
+        # Find index where time <= endTime/1000
+        # Data is sorted ascending
+        target = endTime / 1000
+        
+        # Binary search for performance
+        import bisect
+        keys = [d['time'] for d in data]
+        idx = bisect.bisect_right(keys, target)
+        
+        start_idx = max(0, idx - limit)
+        return {"status": "success", "data": data[start_idx:idx]}
+    else:
+        # Return last `limit` candles
+        return {"status": "success", "data": data[-limit:]}

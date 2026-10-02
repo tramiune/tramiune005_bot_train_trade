@@ -6,12 +6,13 @@ import axios from 'axios';
 import { Loader2, ArrowRightToLine } from 'lucide-react';
 
 interface ChartWidgetProps {
+    focusedTrade?: any;
     symbol: string;
 }
 
 const frontendCache: Record<string, any[]> = {};
 
-const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
+const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -48,15 +49,17 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         }
         
         const endTime = trade.exit_time || trade.time;
+        const isLong = trade.side === 'LONG';
+        
         // Create TP Baseline Series
         tpSeriesRef.current = chartRef.current.addSeries(BaselineSeries, {
             baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: 'rgba(38, 166, 154, 0.35)',
-            topFillColor2: 'rgba(38, 166, 154, 0.35)',
-            topLineColor: '#26a69a',
-            bottomFillColor1: 'rgba(0, 0, 0, 0)',
-            bottomFillColor2: 'rgba(0, 0, 0, 0)',
-            bottomLineColor: 'rgba(0, 0, 0, 0)',
+            topFillColor1: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+            topFillColor2: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+            topLineColor: isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
+            bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+            bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+            bottomLineColor: !isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
             lineWidth: 3,
             lineStyle: 0,
             lastValueVisible: false,
@@ -66,12 +69,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         // Create SL Baseline Series
         slSeriesRef.current = chartRef.current.addSeries(BaselineSeries, {
             baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: 'rgba(0, 0, 0, 0)',
-            topFillColor2: 'rgba(0, 0, 0, 0)',
-            topLineColor: 'rgba(0, 0, 0, 0)',
-            bottomFillColor1: 'rgba(239, 83, 80, 0.35)',
-            bottomFillColor2: 'rgba(239, 83, 80, 0.35)',
-            bottomLineColor: '#ef5350',
+            topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+            topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+            topLineColor: !isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
+            bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+            bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+            bottomLineColor: isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
             lineWidth: 3,
             lineStyle: 0,
             lastValueVisible: false,
@@ -120,26 +123,20 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         isFetchingRef.current = true;
         
         try {
-            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;
+            let url = `http://${window.location.hostname}:8000/api/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;
             if (endTime) {
                 url += `&endTime=${endTime}`;
             }
             
             const res = await axios.get(url);
-            const data = res.data;
+            const data = res.data.data ? res.data.data : res.data;
             
-            if (data.length === 0) {
+            if (!data || data.length === 0) {
                 isFetchingRef.current = false;
                 return;
             }
 
-            const formattedData = data.map((d: any) => ({
-                time: d[0] / 1000,
-                open: parseFloat(d[1]),
-                high: parseFloat(d[2]),
-                low: parseFloat(d[3]),
-                close: parseFloat(d[4]),
-            }));
+            const formattedData = data;
 
             if (endTime) {
                 const newBatch = formattedData.filter((f: any) => !candleDataRef.current.find((c: any) => c.time === f.time));
@@ -148,7 +145,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                     seriesRef.current.setData(candleDataRef.current);
                     if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(candleDataRef.current, 20));
                     if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(candleDataRef.current, 200));
-                    // REDRAW MARKERS & LINES AFTER SETDATA WIPES THEM
                     reapplyMarkersAndLines();
                 }
             } else {
@@ -159,11 +155,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                     if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(candleDataRef.current, 200));
                 }
             }
-
-            earliestTimeRef.current = data[0][0] - 1;
-
-        } catch (e) {
-            console.error("Failed to fetch klines", e);
+            
+            earliestTimeRef.current = candleDataRef.current[0]?.time;
+            
+        } catch (error) {
+            console.error("Failed to fetch klines:", error);
         } finally {
             isFetchingRef.current = false;
         }
@@ -252,38 +248,14 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         
         setActiveTradeId(trade.time);
         activeTradeRef.current = trade;
-        drawTradeLines(trade);
         
-        const padding = 72 * 3600;
-        const endTime = trade.exit_time || trade.time;
-        chartRef.current.timeScale().setVisibleRange({
-            from: (trade.time - padding) as any,
-            to: (endTime + padding) as any
-        });
-        
-        // Temporarily reset autoscale so it fits the price lines
-        if (seriesRef.current) {
-            seriesRef.current.priceScale().applyOptions({ autoScale: false });
-            setTimeout(() => {
-                if (seriesRef.current) seriesRef.current.priceScale().applyOptions({ autoScale: true });
-            }, 50);
-        }
-
-        // Fetch candles around this trade if we don't have them!
+        // Ensure data is loaded
         if (earliestTimeRef.current && trade.time < earliestTimeRef.current) {
             try {
-                // Fetch 1000 candles ending shortly after the trade
-                const endTimestamp = (trade.exit_time || trade.time) + (7 * 24 * 3600);
-                const url = `https://api.binance.com/api/v3/klines?symbol=${symbol.replace('/', '')}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000&endTime=${endTimestamp * 1000}`;
+                const endTimestamp = (trade.exit_time || trade.time) + (24 * 3600);
+                const url = `http://${window.location.hostname}:8000/api/klines?symbol=${symbol.replace('/', '')}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000&endTime=${endTimestamp * 1000}`;
                 const res = await axios.get(url);
-                const formatted = res.data.map((d: any) => ({
-                    time: d[0] / 1000,
-                    open: parseFloat(d[1]),
-                    high: parseFloat(d[2]),
-                    low: parseFloat(d[3]),
-                    close: parseFloat(d[4]),
-                }));
-                // Sort and deduplicate with existing data
+                const formatted = res.data.data ? res.data.data : res.data;
                 const newData = [...formatted, ...candleDataRef.current];
                 const uniqueData = Array.from(new Map(newData.map(item => [item.time, item])).values());
                 uniqueData.sort((a: any, b: any) => a.time - b.time);
@@ -295,15 +267,26 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                     if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(uniqueData, 20));
                     if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(uniqueData, 200));
                     reapplyMarkersAndLines();
-                    // Set visible range again after data is loaded
-                    chartRef.current.timeScale().setVisibleRange({
-                        from: (trade.time - padding) as any,
-                        to: (endTime + padding) as any
-                    });
                 }
             } catch (e) {
                 console.error("Failed to fetch historical candles for trade", e);
             }
+        }
+        
+        drawTradeLines(trade);
+        
+        const padding = symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600;
+        const endTime = trade.exit_time || trade.time;
+        chartRef.current.timeScale().setVisibleRange({
+            from: (trade.time - padding) as any,
+            to: (endTime + padding) as any
+        });
+        
+        if (seriesRef.current) {
+            seriesRef.current.priceScale().applyOptions({ autoScale: false });
+            setTimeout(() => {
+                if (seriesRef.current) seriesRef.current.priceScale().applyOptions({ autoScale: true });
+            }, 50);
         }
     };
 
@@ -330,9 +313,23 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                 horzLines: { color: '#2B2B43' },
             },
             autoSize: true,
+            
             timeScale: {
                 timeVisible: true,
                 secondsVisible: false,
+                tickMarkFormatter: (time: any, tickMarkType: any, locale: string) => {
+                    const date = new Date(time * 1000);
+                    if (tickMarkType === 0) return date.getFullYear().toString();
+                    if (tickMarkType === 1) return date.toLocaleString(locale, { month: 'short' });
+                    if (tickMarkType === 2) return date.getDate().toString();
+                    return date.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit', hour12: false });
+                }
+            },
+            localization: {
+                timeFormatter: (time: any) => {
+                    const date = new Date(time * 1000);
+                    return date.toLocaleString();
+                }
             },
         });
         chartRef.current = chart;
@@ -423,6 +420,21 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
             chart.remove();
         };
     }, [symbol]);
+
+
+    useEffect(() => {
+        if (focusedTrade && chartRef.current) {
+            const mappedTrade = {
+                time: new Date(focusedTrade.entry_time).getTime() / 1000,
+                exit_time: focusedTrade.exit_time ? new Date(focusedTrade.exit_time).getTime() / 1000 : undefined,
+                side: focusedTrade.side,
+                entry: focusedTrade.entry_price,
+                sl: focusedTrade.stop_loss,
+                tp: focusedTrade.take_profit
+            };
+            handleTradeClick(mappedTrade);
+        }
+    }, [focusedTrade]);
 
     return (
         <div className="w-full flex flex-col space-y-4">

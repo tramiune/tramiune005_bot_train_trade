@@ -1,66 +1,47 @@
 import asyncio
 import pandas as pd
 from database import engine, SessionLocal
-from models import Trade
+from models import Trade, BotConfig
 from fetch_more import fetch_lots_of_klines
-from engine.backtester import backtest_doge_rr25, backtest_sol_god_mode
+from engine.backtester import backtest_doge_3m_degen
 import ccxt.async_support as ccxt
+from datetime import datetime
 
 async def main():
     exchange = ccxt.binance({'enableRateLimit': True})
     db = SessionLocal()
     
-    print("Fetching DOGE data...")
-    doge_data = await fetch_lots_of_klines(exchange, "DOGE/USDT", '1h', 35000)
+    print("Fetching DOGE 3m data (approx 210,000 candles)...")
+    doge_data = await fetch_lots_of_klines(exchange, "DOGE/USDT", '3m', 710000)
     df_doge = pd.DataFrame(doge_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    doge_trades = backtest_doge_rr25(df_doge)
-    
-    print("Fetching SOL data...")
-    sol_data = await fetch_lots_of_klines(exchange, "SOL/USDT", '1h', 35000)
-    print("Fetching BTC data...")
-    btc_data = await fetch_lots_of_klines(exchange, "BTC/USDT", '1h', 35000)
-    
-    df_sol = pd.DataFrame(sol_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    df_btc = pd.DataFrame(btc_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    sol_trades = backtest_sol_god_mode(df_sol, df_btc)
+    doge_trades = backtest_doge_3m_degen(df_doge)
     
     await exchange.close()
     
-    print(f"Found {len(doge_trades)} DOGE trades and {len(sol_trades)} SOL trades.")
+    print(f"Found {len(doge_trades)} DOGE 3m trades.")
     
-    from datetime import datetime
+    print("Clearing old trades and configs...")
+    db.query(Trade).delete()
+    db.query(BotConfig).delete()
     
-    # Check if we already have trades to avoid duplicates
-    existing = db.query(Trade).count()
-    if existing > 0:
-        print("Clearing old trades...")
-        db.query(Trade).delete()
-        db.commit()
+    # Insert only DOGE 3m config
+    db.add(BotConfig(strategy="DOGE_3M_DEGEN", is_active=True, risk_per_trade_pct=30.0))
+    db.commit()
 
     print("Inserting to DB...")
     for t in doge_trades:
         trade = Trade(
             symbol="DOGE/USDT",
-            strategy="DOGE_RR25",
+            strategy="DOGE_3M_DEGEN",
             side=t["side"],
             entry_price=t["entry"],
             stop_loss=t["sl"],
             take_profit=t["tp"],
+            exit_price=t["exit_price"],
+            pnl=t["pnl"],
             status="CLOSED",
-            entry_time=datetime.fromtimestamp(t["time"])
-        )
-        db.add(trade)
-        
-    for t in sol_trades:
-        trade = Trade(
-            symbol="SOL/USDT",
-            strategy="SOL_GOD_MODE",
-            side=t["side"],
-            entry_price=t["entry"],
-            stop_loss=t["sl"],
-            take_profit=t["tp"],
-            status="CLOSED",
-            entry_time=datetime.fromtimestamp(t["time"])
+            entry_time=datetime.fromtimestamp(t["time"]),
+            exit_time=datetime.fromtimestamp(t["exit_time"])
         )
         db.add(trade)
         

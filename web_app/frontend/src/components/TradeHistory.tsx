@@ -3,7 +3,7 @@ import axios from 'axios';
 
 const API_BASE = `http://${window.location.hostname}:8000/api`;
 
-const TradeHistory: React.FC = () => {
+const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void}> = ({onTradeClick}) => {
     const [trades, setTrades] = useState<any[]>([]);
 
     useEffect(() => {
@@ -16,43 +16,60 @@ const TradeHistory: React.FC = () => {
             }
         };
         fetchTrades();
-        const interval = setInterval(fetchTrades, 10000);
+        const interval = setInterval(fetchTrades, 5000);
         return () => clearInterval(interval);
     }, []);
 
+    const wins = trades.filter(t => t.pnl && t.pnl > 0).length;
+    const losses = trades.filter(t => t.pnl && t.pnl <= 0).length;
+    const winrate = trades.length > 0 ? ((wins / trades.length) * 100).toFixed(1) : '0.0';
+
     return (
         <div className="bg-gray-800 rounded-lg p-6 border border-gray-700 shadow-lg mt-6">
-            <h2 className="text-xl font-bold mb-4 text-white">Recent Trades</h2>
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm text-gray-400">
-                    <thead className="text-xs text-gray-400 uppercase bg-gray-700">
+            <div className="flex justify-between items-center mb-4">
+                <h2 className="text-xl font-bold text-white">Recent Trades</h2>
+                <div className="flex gap-4 text-sm font-medium">
+                    <span className="text-gray-400">Total: <span className="text-white">{trades.length}</span></span>
+                    <span className="text-green-400">Wins: {wins}</span>
+                    <span className="text-red-400">Losses: {losses}</span>
+                    <span className="text-blue-400">Win Rate: {winrate}%</span>
+                </div>
+            </div>
+            
+            <div className="overflow-x-auto max-h-[500px] overflow-y-auto">
+                <table className="w-full text-left text-sm text-gray-400 relative">
+                    <thead className="text-xs text-gray-400 uppercase bg-gray-700 sticky top-0">
                         <tr>
+                            <th className="px-4 py-3">STT</th>
                             <th className="px-4 py-3">Time</th>
                             <th className="px-4 py-3">Symbol</th>
                             <th className="px-4 py-3">Side</th>
                             <th className="px-4 py-3">Entry</th>
-                            <th className="px-4 py-3">SL</th>
+                            <th className="px-4 py-3">Exit</th>
                             <th className="px-4 py-3">Status</th>
                         </tr>
                     </thead>
                     <tbody>
                         {trades.length === 0 ? (
                             <tr>
-                                <td colSpan={6} className="px-4 py-4 text-center">No trades yet</td>
+                                <td colSpan={7} className="px-4 py-4 text-center">No trades yet</td>
                             </tr>
                         ) : (
                             trades.map((trade, idx) => (
-                                <tr key={idx} className="border-b border-gray-700 hover:bg-gray-700">
+                                <tr key={idx} onClick={() => onTradeClick && onTradeClick(trade)} className="border-b border-gray-700 hover:bg-gray-700 cursor-pointer">
+                                    <td className="px-4 py-3 text-gray-500">{trades.length - idx}</td>
                                     <td className="px-4 py-3">{new Date(trade.entry_time).toLocaleString()}</td>
                                     <td className="px-4 py-3 text-white font-medium">{trade.symbol}</td>
                                     <td className={`px-4 py-3 font-bold ${trade.side === 'LONG' ? 'text-green-400' : 'text-red-400'}`}>
                                         {trade.side}
                                     </td>
-                                    <td className="px-4 py-3">${trade.entry_price.toFixed(4)}</td>
-                                    <td className="px-4 py-3">${trade.stop_loss.toFixed(4)}</td>
+                                    <td className="px-4 py-3">${trade.entry_price?.toFixed(4) || '0.0000'}</td>
+                                    <td className={`px-4 py-3 font-medium ${trade.pnl > 0 ? 'text-green-400' : trade.pnl < 0 ? 'text-red-400' : ''}`}>
+                                        {trade.exit_price ? `$${trade.exit_price.toFixed(4)}` : '-'}
+                                    </td>
                                     <td className="px-4 py-3">
-                                        <span className={`px-2 py-1 rounded text-xs ${trade.status === 'OPEN' ? 'bg-blue-900 text-blue-300' : 'bg-gray-600 text-gray-300'}`}>
-                                            {trade.status}
+                                        <span className={`px-2 py-1 rounded text-xs ${trade.status === 'OPEN' ? 'bg-blue-900 text-blue-300' : trade.pnl > 0 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
+                                            {trade.status === 'OPEN' ? 'OPEN' : trade.pnl > 0 ? 'WIN' : 'LOSS'}
                                         </span>
                                     </td>
                                 </tr>
