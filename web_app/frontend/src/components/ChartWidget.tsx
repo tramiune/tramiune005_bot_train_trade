@@ -120,7 +120,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         isFetchingRef.current = true;
         
         try {
-            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=1000`;
+            let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;
             if (endTime) {
                 url += `&endTime=${endTime}`;
             }
@@ -178,8 +178,21 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
 
         setIsBacktestLoading(true);
         try {
-            const res = await axios.get(`http://${window.location.hostname}:8000/api/backtest?symbol=${symbol.replace('USDT', '/USDT')}`);
-            const trades = res.data;
+            let url = `http://${window.location.hostname}:8000/api/backtest?symbol=${symbol.replace('USDT', '/USDT')}`;
+            if (symbol === 'DOGEUSDT') {
+                url = `http://${window.location.hostname}:8000/api/backtest/doge_inverse?compounding=true&risk_pct=30.0`;
+            }
+            const res = await axios.get(url);
+            const trades = symbol === 'DOGEUSDT' ? res.data.data.trades.map((t: any) => ({
+                time: t.entry_time / 1000,
+                side: t.side,
+                entry: t.entry_price,
+                sl: t.side === 'LONG' ? t.entry_price * 0.85 : t.entry_price * 1.15,
+                tp: t.side === 'LONG' ? t.entry_price * 1.05 : t.entry_price * 0.95,
+                exit_time: t.exit_time / 1000,
+                pnl: t.pnl,
+                balance_after: t.balance_after
+            })) : res.data;
             
             frontendCache[symbol] = trades;
             renderBacktest(trades);
@@ -261,7 +274,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
             try {
                 // Fetch 1000 candles ending shortly after the trade
                 const endTimestamp = (trade.exit_time || trade.time) + (7 * 24 * 3600);
-                const url = `https://api.binance.com/api/v3/klines?symbol=${symbol.replace('/', '')}&interval=1h&limit=1000&endTime=${endTimestamp * 1000}`;
+                const url = `https://api.binance.com/api/v3/klines?symbol=${symbol.replace('/', '')}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000&endTime=${endTimestamp * 1000}`;
                 const res = await axios.get(url);
                 const formatted = res.data.map((d: any) => ({
                     time: d[0] / 1000,
@@ -367,7 +380,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
             fetchBacktest();
         });
 
-        const wsUrl = `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_1h`;
+        const wsUrl = `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${symbol === 'DOGEUSDT' ? '3m' : '1h'}`;
         const ws = new WebSocket(wsUrl);
 
         ws.onmessage = (event) => {
@@ -415,7 +428,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
         <div className="w-full flex flex-col space-y-4">
             <div className="w-full bg-[#1E222D] rounded-lg overflow-hidden border border-gray-700 shadow-lg flex flex-col relative">
                 <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - 1H</h3>
+                    <h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - {symbol === 'DOGEUSDT' ? '3m (DEGEN MODE)' : '1H'}</h3>
                     <span className="flex items-center text-xs text-green-400">
                         <span className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></span>
                         Live + Backtest Active
@@ -456,7 +469,8 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                                 <th className="px-4 py-2">Entry</th>
                                 <th className="px-4 py-2">SL</th>
                                 <th className="px-4 py-2">TP</th>
-                                <th className="px-4 py-2">RR</th>
+                                <th className="px-4 py-2">{symbol === 'DOGEUSDT' ? 'PnL' : 'RR'}</th>
+                                {symbol === 'DOGEUSDT' && <th className="px-4 py-2 text-yellow-400">Balance</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -475,9 +489,10 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol }) => {
                                     <td className="px-4 py-2 text-blue-400 font-bold">${trade.entry.toFixed(4)}</td>
                                     <td className="px-4 py-2 text-red-400">${trade.sl.toFixed(4)}</td>
                                     <td className="px-4 py-2 text-green-400">${trade.tp.toFixed(4)}</td>
-                                    <td className="px-4 py-2 font-mono text-blue-300">
-                                        {((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
+                                    <td className={"px-4 py-2 font-mono " + (symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "text-green-400" : "text-red-400") : "text-blue-300")}>
+                                        {symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "+" : "") + trade.pnl.toFixed(2) + "$" : ((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
                                     </td>
+                                    {symbol === 'DOGEUSDT' && <td className="px-4 py-2 font-mono text-yellow-400 font-bold">${trade.balance_after?.toFixed(2)}</td>}
                                 </tr>
                             ))}
                         </tbody>

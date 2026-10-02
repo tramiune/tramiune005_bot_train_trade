@@ -20,7 +20,7 @@ function App() {
             <h1 className="text-2xl font-bold text-white tracking-wide">Quant Command Center</h1>
           </div>
           <div className="text-sm font-mono text-gray-500">
-            v1.0.0 | SOL God Mode Active
+            v1.0.0 | DOGE Degen Mode Ready
           </div>
         </header>
 
@@ -32,7 +32,7 @@ function App() {
             
             {/* Tabs */}
             <div className="flex space-x-2">
-              {['SOLUSDT', 'BTCUSDT', 'ETHUSDT'].map((tab) => (
+              {['SOLUSDT', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
