@@ -32,7 +32,7 @@ function App() {
             
             {/* Tabs */}
             <div className="flex space-x-2">
-              {['SOLUSDT', 'BTCUSDT'].map((tab) => (
+              {['SOLUSDT', 'BTCUSDT', 'ETHUSDT'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}

@@ -664,3 +664,343 @@ def backtest_sol_retest(symbol: str = "SOL/USDT", timeframe: str = "1h", limit: 
             "profit_r": profit_r
         }
     }
+
+
+
+@app.get("/api/backtest/sol_inverse")
+async def backtest_sol_inverse(
+    timeframe: str = Query("5m"),
+    days: int = Query(30)
+):
+    try:
+        from core.exchange import fetch_ohlcv
+        import numpy as np
+        
+        limit = int(days * 24 * 60 / int(timeframe.replace('m', '')))
+        df = await fetch_ohlcv("SOL/USDT", timeframe, limit=limit + 200)
+        
+        # Calculate KC and BB
+        period = 20
+        df['tr'] = np.maximum(
+            df['high'] - df['low'],
+            np.maximum(abs(df['high'] - df['close'].shift()), abs(df['low'] - df['close'].shift()))
+        )
+        df['atr'] = df['tr'].rolling(window=period).mean()
+        df['kc_mid'] = df['close'].rolling(window=period).mean()
+        df['kc_upper'] = df['kc_mid'] + (1.5 * df['atr'])
+        df['kc_lower'] = df['kc_mid'] - (1.5 * df['atr'])
+        
+        df['bb_mid'] = df['close'].rolling(window=period).mean()
+        df['bb_std'] = df['close'].rolling(window=period).std()
+        df['bb_upper'] = df['bb_mid'] + (2.0 * df['bb_std'])
+        df['bb_lower'] = df['bb_mid'] - (2.0 * df['bb_std'])
+        
+        df['vol_ma'] = df['volume'].rolling(window=20).mean()
+        
+        df['squeeze_on'] = (df['bb_upper'] < df['kc_upper']) & (df['bb_lower'] > df['kc_lower'])
+        df['squeeze_off'] = ~df['squeeze_on']
+        df['squeeze_duration'] = df['squeeze_on'].groupby((~df['squeeze_on']).cumsum()).cumsum()
+        
+        trades = []
+        tp_pct = 5.0
+        sl_pct = 12.0
+        maker_fee = 0.02 / 100
+        taker_fee = 0.05 / 100
+        
+        i = 200
+        while i < len(df) - 1:
+            was_squeezed = df['squeeze_duration'].iloc[i-1] >= 5
+            fires_now = df['squeeze_off'].iloc[i] and df['squeeze_on'].iloc[i-1]
+            high_vol = df['volume'].iloc[i] > (1.5 * df['vol_ma'].iloc[i])
+            
+            if was_squeezed and fires_now and high_vol:
+                is_bullish_breakout = df['close'].iloc[i] > df['bb_mid'].iloc[i]
+                side = 'short' if is_bullish_breakout else 'long'
+                entry = df['close'].iloc[i]
+                
+                if side == 'long':
+                    sl_price = entry * (1 - sl_pct/100)
+                    tp_price = entry * (1 + tp_pct/100)
+                else:
+                    sl_price = entry * (1 + sl_pct/100)
+                    tp_price = entry * (1 - tp_pct/100)
+                    
+                exit_idx = i
+                exit_price = 0
+                is_win = False
+                for j in range(i+1, len(df)):
+                    if side == 'long':
+                        if df['low'].iloc[j] <= sl_price:
+                            is_win = False; exit_idx = j; exit_price = sl_price; break
+                        elif df['high'].iloc[j] >= tp_price:
+                            is_win = True; exit_idx = j; exit_price = tp_price; break
+                    else:
+                        if df['high'].iloc[j] >= sl_price:
+                            is_win = False; exit_idx = j; exit_price = sl_price; break
+                        elif df['low'].iloc[j] <= tp_price:
+                            is_win = True; exit_idx = j; exit_price = tp_price; break
+                
+                if exit_idx > i:
+                    pnl_pct = (tp_pct - 0.04) if is_win else (-sl_pct - 0.07)
+                    trades.append({
+                        "id": str(df.index[i]),
+                        "symbol": "SOLUSDT",
+                        "side": side.upper(),
+                        "entry_price": float(entry),
+                        "exit_price": float(exit_price),
+                        "entry_time": int(df['timestamp'].iloc[i]),
+                        "exit_time": int(df['timestamp'].iloc[exit_idx]),
+                        "pnl": float(pnl_pct * 200 / 100), # Assume $200 position size
+                        "pnl_pct": float(pnl_pct)
+                    })
+                    i = exit_idx
+                    continue
+            i += 1
+            
+        win_trades = [t for t in trades if t['pnl'] > 0]
+        loss_trades = [t for t in trades if t['pnl'] <= 0]
+        total_pnl = sum(t['pnl'] for t in trades)
+        
+        return {
+            "status": "success",
+            "data": {
+                "total_trades": len(trades),
+                "win_trades": len(win_trades),
+                "loss_trades": len(loss_trades),
+                "win_rate": (len(win_trades) / len(trades) * 100) if trades else 0,
+                "total_pnl": total_pnl,
+                "trades": trades,
+                "market_data": df[['timestamp', 'open', 'high', 'low', 'close', 'volume']].to_dict(orient="records")
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+@app.get("/api/backtest/eth_vwap")
+
+def backtest_eth_vwap(symbol: str = "ETH/USDT", timeframe: str = "5m", limit: int = 20000):
+    since = datetime.now(timezone.utc) - timedelta(days=limit/(24*12)) # Approx days for 5m candles
+    df = _fetch_ohlcv_ccxt("binance", symbol, timeframe, since=since, limit=limit)
+    
+    if df.empty:
+        return {"data": [], "markers": [], "metrics": {}}
+
+    import numpy as np
+    
+    # Calculate VWAP
+    df['date'] = df['timestamp'].dt.date if pd.api.types.is_datetime64_any_dtype(df['timestamp']) else pd.to_datetime(df['timestamp'], unit='ms').dt.date
+    df['tp'] = (df['high'] + df['low'] + df['close']) / 3
+    df['vol_tp'] = df['volume'] * df['tp']
+    df['cum_vol'] = df.groupby('date')['volume'].cumsum()
+    df['cum_vol_tp'] = df.groupby('date')['vol_tp'].cumsum()
+    df['vwap'] = df['cum_vol_tp'] / df['cum_vol']
+    df['dev_sq'] = df['volume'] * ((df['tp'] - df['vwap']) ** 2)
+    df['cum_dev_sq'] = df.groupby('date')['dev_sq'].cumsum()
+    df['variance'] = df['cum_dev_sq'] / df['cum_vol']
+    df['sd'] = np.sqrt(df['variance'])
+    
+    df['upper_band'] = df['vwap'] + (2.5 * df['sd'])
+    df['lower_band'] = df['vwap'] - (2.5 * df['sd'])
+    df['bandwidth'] = (df['upper_band'] - df['lower_band']) / df['vwap'] * 100
+    
+    markers = []
+    wins = 0
+    losses = 0
+    
+    tp_pct = 2.5
+    sl_pct = 3.0
+    
+    # Ensure datetime for hour check
+    df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+    i = 288 # Start after 1 day
+    while i < len(df) - 1:
+        c = float(df['close'].iloc[i])
+        l = float(df['low'].iloc[i])
+        h = float(df['high'].iloc[i])
+        o = float(df['open'].iloc[i])
+        
+        bw = float(df['bandwidth'].iloc[i])
+        hour = df['datetime'].iloc[i].hour
+        
+        upper = float(df['upper_band'].iloc[i])
+        lower = float(df['lower_band'].iloc[i])
+        
+        dt = pd.to_datetime(df["timestamp"].iloc[i], unit='ms', utc=True)
+        ts_ms = int(dt.timestamp() * 1000)
+        
+        is_long = (bw < 5.0) and (hour > 0) and (l <= lower) and (c > lower) and (c > o)
+        is_short = (bw < 5.0) and (hour > 0) and (h >= upper) and (c < upper) and (c < o)
+        
+        if is_long or is_short:
+            side = 'LONG' if is_long else 'SHORT'
+            entry = c
+            
+            if side == 'LONG':
+                sl = entry * (1 - sl_pct/100)
+                tp = entry * (1 + tp_pct/100)
+            else:
+                sl = entry * (1 + sl_pct/100)
+                tp = entry * (1 - tp_pct/100)
+                
+            j = i + 1
+            exit_idx = None
+            result = None
+            exit_price = 0
+            
+            while j < len(df):
+                hi = float(df["high"].iloc[j])
+                lo = float(df["low"].iloc[j])
+                
+                if side == 'LONG':
+                    if lo <= sl: exit_idx, result, exit_price = j, "LOSS", sl; break
+                    if hi >= tp: exit_idx, result, exit_price = j, "WIN", tp; break
+                else:
+                    if hi >= sl: exit_idx, result, exit_price = j, "LOSS", sl; break
+                    if lo <= tp: exit_idx, result, exit_price = j, "WIN", tp; break
+                j += 1
+                
+            if exit_idx is not None:
+                exit_ts = int(pd.to_datetime(df["timestamp"].iloc[exit_idx], unit='ms', utc=True).timestamp() * 1000)
+                
+                # Entry Marker
+                markers.append({
+                    "time": ts_ms,
+                    "position": "belowBar" if side == 'LONG' else "aboveBar",
+                    "color": "#9C27B0" if side == 'LONG' else "#E91E63",
+                    "shape": "arrowUp" if side == 'LONG' else "arrowDown",
+                    "text": f"{side} @ {entry:.2f}"
+                })
+                
+                # Exit Marker
+                if result == "WIN":
+                    wins += 1
+                    markers.append({
+                        "time": exit_ts,
+                        "position": "aboveBar" if side == 'LONG' else "belowBar",
+                        "color": "#4CAF50",
+                        "shape": "arrowDown" if side == 'LONG' else "arrowUp",
+                        "text": f"TP (+2.5%) @ {exit_price:.2f}"
+                    })
+                else:
+                    losses += 1
+                    markers.append({
+                        "time": exit_ts,
+                        "position": "aboveBar" if side == 'LONG' else "belowBar",
+                        "color": "#F44336",
+                        "shape": "arrowDown" if side == 'LONG' else "arrowUp",
+                        "text": f"SL (-3.0%) @ {exit_price:.2f}"
+                    })
+                i = exit_idx
+                continue
+        i += 1
+        
+    chart_data = []
+    for idx, row in df.iterrows():
+        chart_data.append({
+            "time": int(pd.to_datetime(row["timestamp"], unit='ms', utc=True).timestamp() * 1000),
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"])
+        })
+
+    total = wins + losses
+    winrate = round(wins / total * 100, 2) if total > 0 else 0
+    profit_r = round((wins * 2.5) - (losses * 3.0), 2) # Nominal PnL pct if 100$ used
+
+    return {
+        "data": chart_data,
+        "markers": markers,
+        "metrics": {
+            "total_trades": total,
+            "wins": wins,
+            "losses": losses,
+            "winrate": winrate,
+            "profit_pct": profit_r
+        }
+    }
+
+
+@app.get("/api/backtest")
+def backtest_general(symbol: str = "BTC/USDT"):
+    if symbol == "ETH/USDT":
+        # Run ETH VWAP logic and return array of trades
+        limit = 50000
+        since = datetime.now(timezone.utc) - timedelta(days=limit/(24*12)) 
+        df = _fetch_ohlcv_ccxt("binance", symbol, "5m", since=since, limit=limit)
+        
+        if df.empty: return []
+
+        import numpy as np
+        df['date'] = df['timestamp'].dt.date if pd.api.types.is_datetime64_any_dtype(df['timestamp']) else pd.to_datetime(df['timestamp'], unit='ms').dt.date
+        df['tp'] = (df['high'] + df['low'] + df['close']) / 3
+        df['vol_tp'] = df['volume'] * df['tp']
+        df['cum_vol'] = df.groupby('date')['volume'].cumsum()
+        df['cum_vol_tp'] = df.groupby('date')['vol_tp'].cumsum()
+        df['vwap'] = df['cum_vol_tp'] / df['cum_vol']
+        df['dev_sq'] = df['volume'] * ((df['tp'] - df['vwap']) ** 2)
+        df['cum_dev_sq'] = df.groupby('date')['dev_sq'].cumsum()
+        df['variance'] = df['cum_dev_sq'] / df['cum_vol']
+        df['sd'] = np.sqrt(df['variance'])
+        
+        df['upper_band'] = df['vwap'] + (2.5 * df['sd'])
+        df['lower_band'] = df['vwap'] - (2.5 * df['sd'])
+        df['bandwidth'] = (df['upper_band'] - df['lower_band']) / df['vwap'] * 100
+        df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+
+        trades = []
+        i = 288 
+        while i < len(df) - 1:
+            c = float(df['close'].iloc[i])
+            l = float(df['low'].iloc[i])
+            h = float(df['high'].iloc[i])
+            o = float(df['open'].iloc[i])
+            bw = float(df['bandwidth'].iloc[i])
+            hour = df['datetime'].iloc[i].hour
+            upper = float(df['upper_band'].iloc[i])
+            lower = float(df['lower_band'].iloc[i])
+            
+            is_long = (bw < 5.0) and (hour > 0) and (l <= lower) and (c > lower) and (c > o)
+            is_short = (bw < 5.0) and (hour > 0) and (h >= upper) and (c < upper) and (c < o)
+            
+            if is_long or is_short:
+                side = 'LONG' if is_long else 'SHORT'
+                entry = c
+                sl = entry * (1 - 3.0/100) if side == 'LONG' else entry * (1 + 3.0/100)
+                tp = entry * (1 + 2.5/100) if side == 'LONG' else entry * (1 - 2.5/100)
+                
+                j = i + 1
+                exit_idx = None
+                
+                while j < min(i+288, len(df)):
+                    hi = float(df["high"].iloc[j])
+                    lo = float(df["low"].iloc[j])
+                    if side == 'LONG':
+                        if lo <= sl or hi >= tp: 
+                            exit_idx = j
+                            break
+                    else:
+                        if hi >= sl or lo <= tp: 
+                            exit_idx = j
+                            break
+                    j += 1
+                    
+                if exit_idx is not None:
+                    exit_ts = int(pd.to_datetime(df["timestamp"].iloc[exit_idx], unit='ms', utc=True).timestamp())
+                    entry_ts = int(pd.to_datetime(df["timestamp"].iloc[i], unit='ms', utc=True).timestamp())
+                    
+                    trades.append({
+                        "time": entry_ts,
+                        "side": side,
+                        "entry": entry,
+                        "sl": sl,
+                        "tp": tp,
+                        "exit_time": exit_ts
+                    })
+                    i = exit_idx
+                    continue
+            i += 1
+        return trades
+    
+    return []
