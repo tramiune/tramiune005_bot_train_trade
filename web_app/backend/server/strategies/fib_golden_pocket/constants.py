@@ -1,0 +1,4 @@
+STRATEGY_ID = "fib_golden_pocket"
+MIN_BARS = 200
+DEFAULT_FIB_LOW = 0.5
+DEFAULT_FIB_HIGH = 0.618

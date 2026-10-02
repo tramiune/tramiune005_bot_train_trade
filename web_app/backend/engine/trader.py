@@ -6,6 +6,7 @@ from engine.strategies.btc_rr2 import check_btc_signal
 from engine.strategies.sol_god_mode import check_sol_signal
 from engine.strategies.doge_rr25 import check_doge_signal
 from engine.strategies.xrp_pure_robust import check_xrp_signal
+from engine.strategies.doge_3m_degen import check_doge_degen_signal, get_all_doge_degen_signals
 from engine.indicators import calculate_atr
 from sqlalchemy.orm import Session
 from database import SessionLocal
@@ -32,13 +33,20 @@ class TradingEngine:
         db.close()
         return configs
         
-    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float):
+    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG'):
         entry_price = float(df["close"].iloc[-2])
         
         if strategy == "XRP_PURE_ROBUST":
             # Fixed SL 3.0% and TP 1.5%
             sl_price = entry_price * (1 - 0.03)
             tp_price = entry_price * (1 + 0.015)
+        elif strategy == "DOGE_3M_DEGEN":
+            if side == 'LONG':
+                sl_price = entry_price * (1 - 0.15)
+                tp_price = entry_price * (1 + 0.05)
+            else:
+                sl_price = entry_price * (1 + 0.15)
+                tp_price = entry_price * (1 - 0.05)
         else:
             # Dynamic SL using ATR for older strategies
             df["atr14"] = calculate_atr(df, 14)
@@ -49,7 +57,7 @@ class TradingEngine:
         # Calculate size based on risk
         balance = await self.exchange.get_balance('USDT')
         risk_amount = balance * (risk_pct / 100)
-        risk_per_coin = entry_price - sl_price
+        risk_per_coin = abs(entry_price - sl_price)
         
         if risk_per_coin <= 0:
             self.log(f"[{symbol}] Invalid risk per coin: {risk_per_coin}", "ERROR")
@@ -57,19 +65,19 @@ class TradingEngine:
             
         position_size = risk_amount / risk_per_coin
         
-        self.log(f"[{symbol}] Signal detected! Executing LONG. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size}")
+        self.log(f"[{symbol}] Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size}")
         
         # Execute the order on Binance
         if self.exchange.api_key and self.exchange.secret_key:
             self.log(f"[{symbol}] API keys found. Sending orders to Binance...")
-            await self.exchange.execute_full_trade(symbol, 'buy', position_size, sl_price, tp_price)
+            await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, sl_price, tp_price)
         else:
             self.log(f"[{symbol}] API keys NOT found. Running in PAPER TRADING mode.")
 
         message = (
             f"🚀 <b>{strategy} SIGNAL DETECTED</b>\n\n"
             f"<b>Pair:</b> {symbol}\n"
-            f"<b>Side:</b> LONG\n"
+            f"<b>Side:</b> {side}\n"
             f"<b>Entry:</b> {entry_price:.4f}\n"
             f"<b>Stop Loss:</b> {sl_price:.4f}\n"
             f"<b>Take Profit:</b> {tp_price:.4f}\n"
@@ -81,7 +89,7 @@ class TradingEngine:
         trade = Trade(
             symbol=symbol,
             strategy=strategy,
-            side="LONG",
+            side=side,
             entry_price=entry_price,
             stop_loss=sl_price,
             take_profit=tp_price,
@@ -93,6 +101,121 @@ class TradingEngine:
         db.close()
         await send_telegram_message(message)
         
+    async def sync_missed_trades(self):
+        self.log("Syncing missed trades for DOGE_3M_DEGEN...")
+        try:
+            # Fetch last 15 days of 3m candles (approx 7200 candles)
+            ohlcv = await self.exchange.fetch_ohlcv('DOGE/USDT', '3m', limit=7200)
+            if not ohlcv:
+                return
+                
+            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+            df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+            
+            signals = get_all_doge_degen_signals(df)
+            
+            db = SessionLocal()
+            last_trade = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN").order_by(Trade.entry_time.desc()).first()
+            last_trade_time = pd.to_datetime(last_trade.entry_time) if last_trade else pd.Timestamp('2000-01-01')
+            
+            added = 0
+            for sig in signals:
+                entry_time = pd.to_datetime(sig['time'], unit='ms')
+                if entry_time <= last_trade_time:
+                    continue
+                    
+                entry_price = float(sig['entry_price'])
+                side = sig['side']
+                sl_price = entry_price * (1 + 0.15) if side == 'SHORT' else entry_price * (1 - 0.15)
+                tp_price = entry_price * (1 - 0.05) if side == 'SHORT' else entry_price * (1 + 0.05)
+                
+                trade = Trade(
+                    symbol="DOGE/USDT",
+                    strategy="DOGE_3M_DEGEN",
+                    side=side,
+                    entry_time=entry_time.to_pydatetime(),
+                    entry_price=entry_price,
+                    stop_loss=sl_price,
+                    take_profit=tp_price,
+                    status="OPEN"
+                )
+                db.add(trade)
+                added += 1
+                
+            if added > 0:
+                db.commit()
+                self.log(f"Auto-Sync complete! Recovered {added} missed trades.")
+            else:
+                self.log("Auto-Sync complete. No missed trades found.")
+                
+            db.close()
+            
+        except Exception as e:
+            self.log(f"Error during Auto-Sync: {e}", "ERROR")
+
+
+    async def manage_open_trades(self):
+        db = SessionLocal()
+        open_trades = db.query(Trade).filter(Trade.status == "OPEN").all()
+        if not open_trades:
+            db.close()
+            return
+            
+        try:
+            # We just need the latest candles to check if TP/SL was hit.
+            # For simplicity, we just fetch recent 1m candles for each symbol.
+            symbols = list(set([t.symbol for t in open_trades]))
+            prices = {}
+            for sym in symbols:
+                ohlcv = await self.exchange.fetch_ohlcv(sym, '1m', limit=10)
+                if ohlcv:
+                    prices[sym] = ohlcv
+                    
+            for trade in open_trades:
+                if trade.symbol not in prices:
+                    continue
+                
+                # Check recent candles
+                for candle in prices[trade.symbol]:
+                    c_time, c_open, c_high, c_low, c_close, c_vol = candle
+                    
+                    if trade.side == 'LONG':
+                        if c_low <= trade.stop_loss:
+                            trade.status = "CLOSED"
+                            trade.exit_price = trade.stop_loss
+                            trade.pnl = -1
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            self.log(f"Trade {trade.id} hit SL!")
+                            break
+                        elif c_high >= trade.take_profit:
+                            trade.status = "CLOSED"
+                            trade.exit_price = trade.take_profit
+                            trade.pnl = 1
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            self.log(f"Trade {trade.id} hit TP!")
+                            break
+                    else:
+                        if c_high >= trade.stop_loss:
+                            trade.status = "CLOSED"
+                            trade.exit_price = trade.stop_loss
+                            trade.pnl = -1
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            self.log(f"Trade {trade.id} hit SL!")
+                            break
+                        elif c_low <= trade.take_profit:
+                            trade.status = "CLOSED"
+                            trade.exit_price = trade.take_profit
+                            trade.pnl = 1
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            self.log(f"Trade {trade.id} hit TP!")
+                            break
+            
+            db.commit()
+        except Exception as e:
+            self.log(f"Error managing open trades: {e}", "ERROR")
+        finally:
+            db.close()
+            
     async def run_loop(self):
         self.is_running = True
         self.log("Trading Engine Started.")
@@ -104,10 +227,12 @@ class TradingEngine:
         db.commit()
         db.close()
         
+        await self.sync_missed_trades()
+        
         # Main Engine Loop
         while self.is_running:
             # Poll every 60s
-            await asyncio.sleep(60)
+            await asyncio.sleep(30)
             
             configs = await self.get_active_configs()
             active_strategies = [c.strategy for c in configs]
@@ -132,7 +257,7 @@ class TradingEngine:
                         conf = next(c for c in configs if c.strategy == "SOL_GOD_MODE")
                         await self.execute_trade("SOL/USDT", "SOL_GOD_MODE", conf.risk_per_trade_pct, sol_df, 15.0)
                         
-                # 2. DOGE 1h
+                # 2. DOGE 1h (Old)
                 if "DOGE_RR25" in active_strategies:
                     doge_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '1h', 250)
                     doge_df = pd.DataFrame(doge_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
@@ -142,6 +267,24 @@ class TradingEngine:
                         self.last_trade_time["DOGE_RR25"] = last_time
                         conf = next(c for c in configs if c.strategy == "DOGE_RR25")
                         await self.execute_trade("DOGE/USDT", "DOGE_RR25", conf.risk_per_trade_pct, doge_df, 25.0)
+                        
+                # 2.5 DOGE 3m Degen
+                if "DOGE_3M_DEGEN" in active_strategies:
+                    # Check if there's already an open trade
+                    db = SessionLocal()
+                    has_open = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN", Trade.status == "OPEN").first()
+                    db.close()
+                    
+                    if not has_open:
+                        doge_3m_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '3m', 250)
+                        doge_3m_df = pd.DataFrame(doge_3m_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                        signal = check_doge_degen_signal(doge_3m_df)
+                        last_time = doge_3m_df["timestamp"].iloc[-2]
+                        
+                        if signal and self.last_trade_time.get("DOGE_3M_DEGEN") != last_time:
+                            self.last_trade_time["DOGE_3M_DEGEN"] = last_time
+                            conf = next(c for c in configs if c.strategy == "DOGE_3M_DEGEN")
+                            await self.execute_trade("DOGE/USDT", "DOGE_3M_DEGEN", conf.risk_per_trade_pct, doge_3m_df, 1.0, side=signal)
                         
                 # 3. BTC 1h
                 if "BTC_RR2" in active_strategies:

@@ -141,8 +141,17 @@ async def run_backtest(symbol: str, db: Session = Depends(get_db)):
 @app.get("/api/klines")
 def get_klines(symbol: str, interval: str, limit: int = 1000, endTime: int = None):
     cache_key = f"{symbol}_{interval}"
+    
     if cache_key not in KLINES_CACHE:
-        return {"status": "loading", "data": []}
+        # Fallback to direct fetch if cache is still building
+        import ccxt
+        exchange = ccxt.binance()
+        params = {}
+        if endTime:
+            params['endTime'] = endTime
+        ohlcv = exchange.fetch_ohlcv(symbol.replace('USDT', '/USDT'), interval, limit=limit, params=params)
+        formatted = [{"time": int(d[0] / 1000), "open": float(d[1]), "high": float(d[2]), "low": float(d[3]), "close": float(d[4]), "volume": float(d[5])} for d in ohlcv]
+        return {"status": "success", "data": formatted}
         
     data = KLINES_CACHE[cache_key]
     

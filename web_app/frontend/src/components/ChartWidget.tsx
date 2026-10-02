@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, BaselineSeries, LineSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, LogicalRange, IPriceLine } from 'lightweight-charts';
-import { calculateEMA } from '../utils/indicators';
+import { calculateBB, calculateKC } from '../utils/indicators';
 import axios from 'axios';
 import { Loader2, ArrowRightToLine } from 'lucide-react';
 
@@ -16,8 +16,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-    const ema20SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-    const ema200SeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const kcUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const kcLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const midSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     
     // Price line references (changed to series references)
     const tpSeriesRef = useRef<any>(null);
@@ -42,7 +45,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         const toTime = timeRange.to;
         
         const visibleTrades = frontendCache[symbol].filter((trade: any) => {
-             const endTime = trade.exit_time || trade.time;
+             const endTime = trade.exit_time || (candleDataRef.current.length > 0 ? candleDataRef.current[candleDataRef.current.length - 1].time : trade.time + 3600);
              return trade.time <= toTime && endTime >= fromTime;
         });
         
@@ -58,16 +61,16 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         tradeSeriesRef.current = [];
         
         visibleTrades.forEach((trade: any) => {
-            const endTime = trade.exit_time || trade.time;
+            const endTime = trade.exit_time || (candleDataRef.current.length > 0 ? candleDataRef.current[candleDataRef.current.length - 1].time : trade.time + 3600);
             const isLong = trade.side === 'LONG';
             
             const tpSeries = chartRef.current!.addSeries(BaselineSeries, {
                 baseValue: { type: 'price', price: trade.entry },
-                topFillColor1: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-                topFillColor2: isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topFillColor1: isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
+                topFillColor2: isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
                 topLineColor: isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
-                bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
-                bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
                 bottomLineColor: !isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
                 lineWidth: 3,
                 lineStyle: 0,
@@ -77,11 +80,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             
             const slSeries = chartRef.current!.addSeries(BaselineSeries, {
                 baseValue: { type: 'price', price: trade.entry },
-                topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-                topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
+                topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
                 topLineColor: !isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
-                bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
-                bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.35)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
+                bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
                 bottomLineColor: isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
                 lineWidth: 3,
                 lineStyle: 0,
@@ -112,7 +115,9 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         
         const trades = frontendCache[symbol];
         if (trades.length > 0) {
-            const markers = trades.map((t: any) => ({
+            const firstCandleTime = candleDataRef.current.length > 0 ? candleDataRef.current[0].time : 0;
+            const validTrades = trades.filter(t => t.time >= firstCandleTime);
+            const markers = validTrades.map((t: any) => ({
                 time: t.time,
                 position: t.side === 'LONG' ? 'belowBar' : 'aboveBar',
                 color: t.side === 'LONG' ? '#22c55e' : '#ef4444',
@@ -161,16 +166,27 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 candleDataRef.current = uniqueData;
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
-                    if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(candleDataRef.current, 20));
-                    if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(candleDataRef.current, 200));
+                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
+                    const kcData = calculateKC(candleDataRef.current, 20, 1.5);
+                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
+                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
+                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
+                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
+                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
+                    if (frontendCache[symbol]) renderBacktest(frontendCache[symbol], false);
                     reapplyMarkersAndLines();
                 }
             } else {
                 candleDataRef.current = formattedData;
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
-                    if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(candleDataRef.current, 20));
-                    if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(candleDataRef.current, 200));
+                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
+                    const kcData = calculateKC(candleDataRef.current, 20, 1.5);
+                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
+                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
+                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
+                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
+                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
                 }
             }
             
@@ -185,7 +201,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
 
     const fetchBacktest = async () => {
         if (frontendCache[symbol]) {
-            renderBacktest(frontendCache[symbol]);
+            renderBacktest(frontendCache[symbol], false);
             setIsBacktestLoading(false);
             return;
         }
@@ -222,10 +238,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         }
     };
 
-    const renderBacktest = (trades: any[]) => {
+    const renderBacktest = (trades: any[], shouldPan: boolean = true) => {
         setBacktestTrades(trades);
         if (seriesRef.current && trades.length > 0) {
-            const markers = trades.map((t: any) => ({
+            const firstCandleTime = candleDataRef.current.length > 0 ? candleDataRef.current[0].time : 0;
+            const validTrades = trades.filter(t => t.time >= firstCandleTime);
+            const markers = validTrades.map((t: any) => ({
                 time: t.time,
                 position: t.side === 'LONG' ? 'belowBar' : 'aboveBar',
                 color: t.side === 'LONG' ? '#22c55e' : '#ef4444',
@@ -240,11 +258,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 markersPrimitiveRef.current.setMarkers(markers);
             }
             
-            // Use handleTradeClick to properly zoom and fetch historical candles if necessary
-            const latest = trades[trades.length - 1];
-            setTimeout(() => {
-                handleTradeClick(latest);
-            }, 500);
+            if (shouldPan) {
+                const latest = trades[trades.length - 1];
+                setTimeout(() => {
+                    handleTradeClick(latest);
+                }, 50);
+            }
         }
     };
 
@@ -286,8 +305,14 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 earliestTimeRef.current = uniqueData[0].time;
                 if (seriesRef.current) {
                     seriesRef.current.setData(uniqueData);
-                    if (ema20SeriesRef.current) ema20SeriesRef.current.setData(calculateEMA(uniqueData, 20));
-                    if (ema200SeriesRef.current) ema200SeriesRef.current.setData(calculateEMA(uniqueData, 200));
+                    const bbData = calculateBB(uniqueData, 20, 2.0);
+                    const kcData = calculateKC(uniqueData, 20, 1.5);
+                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
+                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
+                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
+                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
+                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
+                    if (frontendCache[symbol]) renderBacktest(frontendCache[symbol], false);
                     reapplyMarkersAndLines();
                 }
             } catch (e) {
@@ -297,17 +322,23 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         
         
         const padding = symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600;
-        const endTime = trade.exit_time || trade.time;
+        const endTime = trade.exit_time || (candleDataRef.current.length > 0 ? candleDataRef.current[candleDataRef.current.length - 1].time : trade.time + 3600);
         chartRef.current.timeScale().setVisibleRange({
             from: (trade.time - padding) as any,
             to: (endTime + padding) as any
         });
         
-        if (seriesRef.current) {
-            seriesRef.current.priceScale().applyOptions({ autoScale: false });
-            setTimeout(() => {
-                if (seriesRef.current) seriesRef.current.priceScale().applyOptions({ autoScale: true });
-            }, 50);
+        try {
+            if (seriesRef.current && candleDataRef.current && candleDataRef.current.length > 0) {
+                seriesRef.current.priceScale().applyOptions({ autoScale: false });
+                setTimeout(() => {
+                    try {
+                        if (seriesRef.current) seriesRef.current.priceScale().applyOptions({ autoScale: true });
+                    } catch(e) {}
+                }, 50);
+            }
+        } catch (e) {
+            console.warn("Could not apply price scale", e);
         }
     };
 
@@ -373,22 +404,26 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }
         });
         seriesRef.current = candlestickSeries;
+
+        // Keltner Channel
+        const kcUpper = chart.addSeries(LineSeries, { color: 'rgba(255, 152, 0, 0.4)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+        kcUpperSeriesRef.current = kcUpper;
         
-        ema20SeriesRef.current = chart.addSeries(LineSeries, {
-            color: '#2962FF',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
-            lastValueVisible: false,
-            priceLineVisible: false,
-        });
+        const kcLower = chart.addSeries(LineSeries, { color: 'rgba(255, 152, 0, 0.4)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+        kcLowerSeriesRef.current = kcLower;
         
-        ema200SeriesRef.current = chart.addSeries(LineSeries, {
-            color: '#9C27B0',
-            lineWidth: 2,
-            crosshairMarkerVisible: false,
-            lastValueVisible: false,
-            priceLineVisible: false,
-        });
+        // Bollinger Bands
+        const bbUpper = chart.addSeries(LineSeries, { color: 'rgba(33, 150, 243, 0.8)', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+        bbUpperSeriesRef.current = bbUpper;
+        
+        const bbLower = chart.addSeries(LineSeries, { color: 'rgba(33, 150, 243, 0.8)', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+        bbLowerSeriesRef.current = bbLower;
+        
+        // Mid Line (SMA 20)
+        const mid = chart.addSeries(LineSeries, { color: 'rgba(255, 255, 255, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
+        midSeriesRef.current = mid;
+        
+        
         
         // Reset refs
         markersPrimitiveRef.current = null;
@@ -529,8 +564,8 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                                     <td className="px-4 py-2 text-blue-400 font-bold">${trade.entry.toFixed(4)}</td>
                                     <td className="px-4 py-2 text-red-400">${trade.sl.toFixed(4)}</td>
                                     <td className="px-4 py-2 text-green-400">${trade.tp.toFixed(4)}</td>
-                                    <td className={"px-4 py-2 font-mono " + (symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "text-green-400" : "text-red-400") : "text-blue-300")}>
-                                        {symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "+" : "") + trade.pnl.toFixed(2) + "$" : ((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
+                                    <td className={"px-4 py-2 font-mono " + (symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "text-green-400" : (trade.pnl < 0 ? "text-red-400" : "text-gray-400")) : "text-blue-300")}>
+                                        {symbol === 'DOGEUSDT' ? (trade.pnl != null ? ((trade.pnl > 0 ? "+" : "") + trade.pnl.toFixed(2) + "$") : "OPEN") : ((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
                                     </td>
                                     {symbol === 'DOGEUSDT' && <td className="px-4 py-2 font-mono text-yellow-400 font-bold">${trade.balance_after?.toFixed(2)}</td>}
                                 </tr>
