@@ -9,6 +9,7 @@ class BinanceFutures:
         self.api_key = os.getenv("BINANCE_API_KEY")
         self.secret_key = os.getenv("BINANCE_SECRET_KEY")
         self.testnet = os.getenv("TESTNET", "true").lower() == "true"
+        self.is_hedge_mode = None
         
         self.exchange = ccxt_async.binance({
             'apiKey': self.api_key,
@@ -57,6 +58,13 @@ class BinanceFutures:
         try:
             await self.load_markets()
             
+            if self.is_hedge_mode is None:
+                try:
+                    res = await self.exchange.fapiPrivateGetPositionSideDual()
+                    self.is_hedge_mode = res.get('dualSidePosition', False)
+                except Exception:
+                    self.is_hedge_mode = False
+            
             # 1. Format precisions
             formatted_amount = float(self.exchange.amount_to_precision(symbol, amount))
             formatted_sl = float(self.exchange.price_to_precision(symbol, sl_price))
@@ -66,7 +74,12 @@ class BinanceFutures:
             
             # 2. Limit Entry Order (Instead of Market)
             print(f"Placing ENTRY Limit {side} for {formatted_amount} {symbol} at {formatted_entry}")
-            entry_order = await self.exchange.create_order(symbol, 'limit', side, formatted_amount, formatted_entry)
+            
+            entry_params = {}
+            if self.is_hedge_mode:
+                entry_params['positionSide'] = 'LONG' if side == 'buy' else 'SHORT'
+                
+            entry_order = await self.exchange.create_order(symbol, 'limit', side, formatted_amount, formatted_entry, params=entry_params)
             
             # 3. Determine opposite side for SL/TP
             close_side = 'sell' if side == 'buy' else 'buy'
@@ -74,11 +87,15 @@ class BinanceFutures:
             # 4. Stop Loss Order
             print(f"Placing STOP_MARKET {close_side} at {formatted_sl}")
             sl_params = {'stopPrice': formatted_sl, 'reduceOnly': True}
+            if self.is_hedge_mode:
+                sl_params['positionSide'] = 'LONG' if close_side == 'sell' else 'SHORT'
             await self.exchange.create_order(symbol, 'STOP_MARKET', close_side, formatted_amount, params=sl_params)
             
             # 5. Take Profit Order
             print(f"Placing TAKE_PROFIT_MARKET {close_side} at {formatted_tp}")
             tp_params = {'stopPrice': formatted_tp, 'reduceOnly': True}
+            if self.is_hedge_mode:
+                tp_params['positionSide'] = 'LONG' if close_side == 'sell' else 'SHORT'
             await self.exchange.create_order(symbol, 'TAKE_PROFIT_MARKET', close_side, formatted_amount, params=tp_params)
             
             return entry_order
