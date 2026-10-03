@@ -244,9 +244,9 @@ class TradingEngine:
         finally:
             db.close()
             
-    async def run_loop(self):
+    async def start(self):
         self.is_running = True
-        self.log("Trading Engine Started.")
+        self.log("Trading Engine set to ACTIVE (Will execute new trades).")
         
         # Ensure initial DB configs
         db = SessionLocal()
@@ -256,91 +256,108 @@ class TradingEngine:
         db.close()
         
         await self.sync_missed_trades()
+        self.log("Engine is now waiting for WebSocket candle close events...")
+
+    async def on_candle_closed(self):
+        self.log("Candle closed event received! Processing signals...")
         
-        # Main Engine Loop
-        while self.is_running:
-            # Poll every 60s
-            await asyncio.sleep(30)
+        # 1. Manage existing trades
+        await self.manage_open_trades()
+
+        configs = await self.get_active_configs()
+        active_strategies = [c.strategy for c in configs]
+        
+        if not active_strategies:
+            return
             
-            configs = await self.get_active_configs()
-            active_strategies = [c.strategy for c in configs]
-            
-            if not active_strategies:
-                continue
+        try:
+            # Fetch 1h Macro data if needed
+            if any(s in active_strategies for s in ["SOL_GOD_MODE", "DOGE_RR25", "BTC_RR2", "XRP_PURE_ROBUST"]):
+                btc_data = await self.exchange.fetch_ohlcv("BTC/USDT", '1h', 250)
+                btc_df = pd.DataFrame(btc_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 
-            try:
-                # Fetch 1h Macro data if needed
-                if any(s in active_strategies for s in ["SOL_GOD_MODE", "DOGE_RR25", "BTC_RR2", "XRP_PURE_ROBUST"]):
-                    btc_data = await self.exchange.fetch_ohlcv("BTC/USDT", '1h', 250)
-                    btc_df = pd.DataFrame(btc_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    
-                # 1. SOL 1h
-                if "SOL_GOD_MODE" in active_strategies:
-                    sol_data = await self.exchange.fetch_ohlcv("SOL/USDT", '1h', 250)
-                    sol_df = pd.DataFrame(sol_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    signal = check_sol_signal(sol_df, btc_df)
-                    last_time = sol_df["timestamp"].iloc[-2]
-                    if signal == "LONG" and self.last_trade_time.get("SOL_GOD_MODE") != last_time:
-                        self.last_trade_time["SOL_GOD_MODE"] = last_time
-                        conf = next(c for c in configs if c.strategy == "SOL_GOD_MODE")
+            # 1. SOL 1h
+            if "SOL_GOD_MODE" in active_strategies:
+                sol_data = await self.exchange.fetch_ohlcv("SOL/USDT", '1h', 250)
+                sol_df = pd.DataFrame(sol_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                signal = check_sol_signal(sol_df, btc_df)
+                last_time = sol_df["timestamp"].iloc[-2]
+                if signal == "LONG" and self.last_trade_time.get("SOL_GOD_MODE") != last_time:
+                    self.last_trade_time["SOL_GOD_MODE"] = last_time
+                    conf = next(c for c in configs if c.strategy == "SOL_GOD_MODE")
+                    if self.is_running:
                         await self.execute_trade("SOL/USDT", "SOL_GOD_MODE", conf.risk_per_trade_pct, sol_df, 15.0)
-                        
-                # 2. DOGE 1h (Old)
-                if "DOGE_RR25" in active_strategies:
-                    doge_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '1h', 250)
-                    doge_df = pd.DataFrame(doge_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    signal = check_doge_signal(doge_df)
-                    last_time = doge_df["timestamp"].iloc[-2]
-                    if signal == "LONG" and self.last_trade_time.get("DOGE_RR25") != last_time:
-                        self.last_trade_time["DOGE_RR25"] = last_time
-                        conf = next(c for c in configs if c.strategy == "DOGE_RR25")
-                        await self.execute_trade("DOGE/USDT", "DOGE_RR25", conf.risk_per_trade_pct, doge_df, 25.0)
-                        
-                # 2.5 DOGE 3m Degen
-                if "DOGE_3M_DEGEN" in active_strategies:
-                    # Check if there's already an open trade
-                    db = SessionLocal()
-                    has_open = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN", Trade.status == "OPEN").first()
-                    db.close()
+                    else:
+                        self.log("SOL_GOD_MODE Signal caught, but Bot is STOPPED. Ignoring execution.")
                     
-                    if not has_open:
-                        doge_3m_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '3m', 250)
-                        doge_3m_df = pd.DataFrame(doge_3m_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                        signal = check_doge_degen_signal(doge_3m_df)
-                        last_time = doge_3m_df["timestamp"].iloc[-2]
-                        
-                        if signal and self.last_trade_time.get("DOGE_3M_DEGEN") != last_time:
-                            self.last_trade_time["DOGE_3M_DEGEN"] = last_time
-                            conf = next(c for c in configs if c.strategy == "DOGE_3M_DEGEN")
-                            await self.execute_trade("DOGE/USDT", "DOGE_3M_DEGEN", conf.risk_per_trade_pct, doge_3m_df, 1.0, side=signal)
-                        
-                # 3. BTC 1h
-                if "BTC_RR2" in active_strategies:
-                    btc_df["e20"] = btc_df["close"].ewm(span=20, adjust=False).mean()
-                    btc_df["e200"] = btc_df["close"].ewm(span=200, adjust=False).mean()
-                    signal = check_btc_signal(btc_df)
-                    last_time = btc_df["timestamp"].iloc[-2]
-                    if signal == "LONG" and self.last_trade_time.get("BTC_RR2") != last_time:
-                        self.last_trade_time["BTC_RR2"] = last_time
-                        conf = next(c for c in configs if c.strategy == "BTC_RR2")
-                        await self.execute_trade("BTC/USDT", "BTC_RR2", conf.risk_per_trade_pct, btc_df, 2.0)
+            # 2. DOGE 1h (Old)
+            if "DOGE_RR25" in active_strategies:
+                doge_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '1h', 250)
+                doge_df = pd.DataFrame(doge_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                signal = check_doge_signal(doge_df)
+                last_time = doge_df["timestamp"].iloc[-2]
+                if signal == "LONG" and self.last_trade_time.get("DOGE_RR25") != last_time:
+                    self.last_trade_time["DOGE_RR25"] = last_time
+                    conf = next(c for c in configs if c.strategy == "DOGE_RR25")
+                    if self.is_running:
+                        await self.execute_trade("DOGE/USDT", "DOGE_RR25", conf.risk_per_trade_pct, doge_df, 25.0)
+                    else:
+                        self.log("DOGE_RR25 Signal caught, but Bot is STOPPED. Ignoring execution.")
+                    
+            # 2.5 DOGE 3m Degen
+            if "DOGE_3M_DEGEN" in active_strategies:
+                # Check if there's already an open trade
+                db = SessionLocal()
+                has_open = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN", Trade.status == "OPEN").first()
+                db.close()
                 
-                # 4. XRP 5m
-                if "XRP_PURE_ROBUST" in active_strategies:
-                    # Note: XRP uses 5m data!
-                    xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 250)
-                    xrp_df = pd.DataFrame(xrp_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                    signal = check_xrp_signal(xrp_df, btc_df) # btc_df is 1h, used for EMA200 Macro check
-                    last_time = xrp_df["timestamp"].iloc[-2]
-                    if signal == "LONG" and self.last_trade_time.get("XRP_PURE_ROBUST") != last_time:
-                        self.last_trade_time["XRP_PURE_ROBUST"] = last_time
-                        conf = next(c for c in configs if c.strategy == "XRP_PURE_ROBUST")
+                if not has_open:
+                    doge_3m_data = await self.exchange.fetch_ohlcv("DOGE/USDT", '3m', 250)
+                    doge_3m_df = pd.DataFrame(doge_3m_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                    signal = check_doge_degen_signal(doge_3m_df)
+                    last_time = doge_3m_df["timestamp"].iloc[-2]
+                    
+                    if signal and self.last_trade_time.get("DOGE_3M_DEGEN") != last_time:
+                        self.last_trade_time["DOGE_3M_DEGEN"] = last_time
+                        conf = next(c for c in configs if c.strategy == "DOGE_3M_DEGEN")
+                        if self.is_running:
+                            await self.execute_trade("DOGE/USDT", "DOGE_3M_DEGEN", conf.risk_per_trade_pct, doge_3m_df, 1.0, side=signal)
+                        else:
+                            self.log(f"DOGE_3M_DEGEN Signal ({signal}) caught, but Bot is STOPPED. Ignoring execution.")
+                    
+            # 3. BTC 1h
+            if "BTC_RR2" in active_strategies:
+                btc_df["e20"] = btc_df["close"].ewm(span=20, adjust=False).mean()
+                btc_df["e200"] = btc_df["close"].ewm(span=200, adjust=False).mean()
+                signal = check_btc_signal(btc_df)
+                last_time = btc_df["timestamp"].iloc[-2]
+                if signal == "LONG" and self.last_trade_time.get("BTC_RR2") != last_time:
+                    self.last_trade_time["BTC_RR2"] = last_time
+                    conf = next(c for c in configs if c.strategy == "BTC_RR2")
+                    if self.is_running:
+                        await self.execute_trade("BTC/USDT", "BTC_RR2", conf.risk_per_trade_pct, btc_df, 2.0)
+                    else:
+                        self.log("BTC_RR2 Signal caught, but Bot is STOPPED. Ignoring execution.")
+            
+            # 4. XRP 5m
+            if "XRP_PURE_ROBUST" in active_strategies:
+                # Note: XRP uses 5m data!
+                xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 250)
+                xrp_df = pd.DataFrame(xrp_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+                signal = check_xrp_signal(xrp_df, btc_df) # btc_df is 1h, used for EMA200 Macro check
+                last_time = xrp_df["timestamp"].iloc[-2]
+                if signal == "LONG" and self.last_trade_time.get("XRP_PURE_ROBUST") != last_time:
+                    self.last_trade_time["XRP_PURE_ROBUST"] = last_time
+                    conf = next(c for c in configs if c.strategy == "XRP_PURE_ROBUST")
+                    if self.is_running:
                         # target_rr doesn't matter for XRP since it uses Fixed SL/TP in execute_trade
                         await self.execute_trade("XRP/USDT", "XRP_PURE_ROBUST", conf.risk_per_trade_pct, xrp_df, 2.0)
-                        
-            except Exception as e:
-                self.log(f"Error in engine loop: {e}", "ERROR")
+                    else:
+                        self.log("XRP_PURE_ROBUST Signal caught, but Bot is STOPPED. Ignoring execution.")
+                    
+        except Exception as e:
+            self.log(f"Error in engine loop: {e}", "ERROR")
 
     def stop(self):
         self.is_running = False
-        self.log("Trading Engine Stopped.")
+        self.log("Trading Engine set to PASSIVE (Will catch signals but NOT execute).")
