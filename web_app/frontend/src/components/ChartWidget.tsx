@@ -198,15 +198,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
 
     const handleGoToRealTime = () => {
         if (!chartRef.current) return;
-        setActiveTradeId(null);
-        activeTradeRef.current = null;
-        
-        tradeSeriesRef.current.forEach(s => {
-            try { chartRef.current?.removeSeries(s.tpSeries); } catch(e){}
-            try { chartRef.current?.removeSeries(s.slSeries); } catch(e){}
-        });
-        tradeSeriesRef.current = [];
-        
         chartRef.current.timeScale().scrollToRealTime();
         if (seriesRef.current) {
             seriesRef.current.priceScale().applyOptions({ autoScale: true });
