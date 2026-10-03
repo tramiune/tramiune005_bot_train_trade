@@ -116,19 +116,22 @@ class TradingEngine:
     async def sync_missed_trades(self):
         self.log("Syncing missed trades for DOGE_3M_DEGEN...")
         try:
-            # Fetch last 15 days of 3m candles (approx 7200 candles)
-            ohlcv = await self.exchange.fetch_ohlcv('DOGE/USDT', '3m', limit=7200)
-            if not ohlcv:
+            from kline_cache import KLINES_CACHE
+            cache_key = "DOGEUSDT_3m"
+            if cache_key not in KLINES_CACHE:
                 return
                 
-            df = pd.DataFrame(ohlcv, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-            df['datetime'] = pd.to_datetime(df['timestamp'], unit='ms')
+            import pandas as pd
+            df = pd.DataFrame(KLINES_CACHE[cache_key])
+            df = df.rename(columns={'time': 'timestamp'})
+            df['timestamp'] = df['timestamp'] * 1000
             
-            signals = get_all_doge_degen_signals(df)
+            from engine.backtester import backtest_doge_3m_degen
+            missed_trades = backtest_doge_3m_degen(df)
             
             db = SessionLocal()
             last_trade = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN").order_by(Trade.entry_time.desc()).first()
-            last_trade_time = pd.to_datetime(last_trade.exit_time) if (last_trade and last_trade.exit_time) else (pd.to_datetime(last_trade.entry_time) if last_trade else pd.Timestamp('2000-01-01'))
+            last_trade_time = last_trade.entry_time.timestamp() if last_trade and last_trade.entry_time else 0
             
             if last_trade and last_trade.status == "OPEN":
                 self.log("Auto-Sync skipped: A trade is currently OPEN.")
@@ -136,111 +139,35 @@ class TradingEngine:
                 return
                 
             added = 0
-            for sig in signals:
-                entry_time = pd.to_datetime(sig['time'], unit='ms')
-                if entry_time <= last_trade_time:
+            from datetime import datetime
+            for t in missed_trades:
+                if t['time'] <= last_trade_time:
                     continue
                     
-                entry_price = float(sig['entry_price'])
-                side = sig['side']
-                sl_price = entry_price * (1 + 0.15) if side == 'SHORT' else entry_price * (1 - 0.15)
-                tp_price = entry_price * (1 - 0.05) if side == 'SHORT' else entry_price * (1 + 0.05)
-                
-                # Convert UTC to local naive (using simple timedelta or tz_convert)
-                local_dt = entry_time.tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None)
-                
                 trade = Trade(
                     symbol="DOGE/USDT",
                     strategy="DOGE_3M_DEGEN",
-                    side=side,
-                    entry_time=local_dt.to_pydatetime(),
-                    entry_price=entry_price,
-                    stop_loss=sl_price,
-                    take_profit=tp_price,
-                    status="OPEN"
+                    side=t['side'],
+                    entry_price=t['entry'],
+                    stop_loss=t['sl'],
+                    take_profit=t['tp'],
+                    exit_price=t['exit_price'],
+                    pnl=t['pnl'],
+                    status="CLOSED",
+                    entry_time=datetime.fromtimestamp(t['time']),
+                    exit_time=datetime.fromtimestamp(t['exit_time'])
                 )
                 db.add(trade)
                 added += 1
                 
             if added > 0:
                 db.commit()
-                self.log(f"Auto-Sync complete! Recovered {added} missed trades.")
+                self.log(f"Auto-Sync complete! Recovered {added} missed closed trades.")
             else:
                 self.log("Auto-Sync complete. No missed trades found.")
                 
-            db.close()
-            
         except Exception as e:
-            self.log(f"Error during Auto-Sync: {e}", "ERROR")
-
-
-    async def manage_open_trades(self):
-        db = SessionLocal()
-        open_trades = db.query(Trade).filter(Trade.status == "OPEN").all()
-        if not open_trades:
-            db.close()
-            return
-            
-        try:
-            # We just need the latest candles to check if TP/SL was hit.
-            # For simplicity, we just fetch recent 1m candles for each symbol.
-            for trade in open_trades:
-                # Fetch 3m candles since entry to ensure we don't miss a spike while offline
-                import pandas as pd
-                since = int(pd.to_datetime(trade.entry_time).timestamp() * 1000)
-                # Fetch up to 1500 3m candles (approx 3 days)
-                ohlcv = await self.exchange.fetch_ohlcv(trade.symbol, '3m', since=since, limit=1500)
-                if not ohlcv:
-                    continue
-                
-                # Check if the limit order is still open (unfilled)
-                open_orders = await self.exchange.exchange.fetch_open_orders(trade.symbol)
-                is_unfilled = any(
-                    o['side'].upper() == trade.side.upper() 
-                    and o['type'] == 'limit' 
-                    and abs(o['price'] - trade.entry_price) / trade.entry_price < 0.001 
-                    for o in open_orders
-                )
-                
-                # Check candles for SL/TP hit
-                hit_sl_tp = False
-                hit_time = None
-                hit_price = 0
-                pnl = 0
-                
-                for candle in ohlcv:
-                    c_time, c_open, c_high, c_low, c_close, c_vol = candle
-                    if trade.side == 'LONG':
-                        if c_low <= trade.stop_loss:
-                            hit_sl_tp = True; hit_price = trade.stop_loss; pnl = -1; hit_time = c_time; break
-                        elif c_high >= trade.take_profit:
-                            hit_sl_tp = True; hit_price = trade.take_profit; pnl = 1; hit_time = c_time; break
-                    else:
-                        if c_high >= trade.stop_loss:
-                            hit_sl_tp = True; hit_price = trade.stop_loss; pnl = -1; hit_time = c_time; break
-                        elif c_low <= trade.take_profit:
-                            hit_sl_tp = True; hit_price = trade.take_profit; pnl = 1; hit_time = c_time; break
-                            
-                if hit_sl_tp:
-                    if is_unfilled:
-                        # Price hit SL/TP BEFORE the Limit order filled! CANCEL IT!
-                        self.log(f"Trade {trade.id} hit SL/TP but limit order never filled! Canceling...")
-                        await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': trade.symbol.replace('/', '')})
-                        trade.status = "CANCELED"
-                        trade.pnl = 0
-                        trade.exit_price = hit_price
-                        trade.exit_time = pd.to_datetime(hit_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
-                    else:
-                        # Price hit SL/TP and the limit order was already filled.
-                        self.log(f"Trade {trade.id} completed! Hit {'TP' if pnl > 0 else 'SL'}.")
-                        trade.status = "CLOSED"
-                        trade.pnl = pnl
-                        trade.exit_price = hit_price
-                        trade.exit_time = pd.to_datetime(hit_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
-            
-            db.commit()
-        except Exception as e:
-            self.log(f"Error managing open trades: {e}", "ERROR")
+            self.log(f"Auto-Sync error: {e}", "ERROR")
         finally:
             db.close()
             
