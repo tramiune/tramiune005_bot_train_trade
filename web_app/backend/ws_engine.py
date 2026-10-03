@@ -12,7 +12,7 @@ trader_instance = TradingEngine()
 async def binance_ws_loop():
     symbol = "dogeusdt"
     interval = "3m"
-    uri = f"wss://fstream.binance.com/ws/{symbol}@kline_{interval}"
+    uri = f"wss://stream.binance.com:9443/ws/{symbol}@kline_{interval}"
     
     cache_key = "DOGEUSDT_3m"
     table_name = "klines_dogeusdt_3m"
@@ -25,6 +25,9 @@ async def binance_ws_loop():
                 print("WebSocket Connected!")
                 while True:
                     msg = await ws.recv()
+                    import sys
+                    print(f"RAW MSG: {msg[:100]}")
+                    sys.stdout.flush()
                     data = json.loads(msg)
                     k = data['k']
                     
