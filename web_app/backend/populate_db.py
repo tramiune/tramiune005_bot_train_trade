@@ -2,29 +2,29 @@ import asyncio
 import pandas as pd
 from database import engine, SessionLocal
 from models import Trade, BotConfig
-from fetch_more import fetch_lots_of_klines
 from engine.backtester import backtest_doge_3m_degen
-import ccxt.async_support as ccxt
 from datetime import datetime
 
-async def main():
-    exchange = ccxt.binance({'enableRateLimit': True})
+def main():
     db = SessionLocal()
     
-    print("Fetching DOGE 3m data (approx 210,000 candles)...")
-    doge_data = await fetch_lots_of_klines(exchange, "DOGE/USDT", '3m', 710000)
-    df_doge = pd.DataFrame(doge_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-    doge_trades = backtest_doge_3m_degen(df_doge)
+    print("Loading DOGE 3m Futures data from local DB...")
+    df_doge = pd.read_sql("SELECT * FROM klines_dogeusdt_3m ORDER BY time ASC", engine)
     
-    await exchange.close()
+    # The backtester expects 'timestamp', we have 'time' (in seconds)
+    df_doge = df_doge.rename(columns={'time': 'timestamp'})
+    df_doge['timestamp'] = df_doge['timestamp'] * 1000
+    
+    print(f"Loaded {len(df_doge)} candles. Running backtester...")
+    doge_trades = backtest_doge_3m_degen(df_doge)
     
     print(f"Found {len(doge_trades)} DOGE 3m trades.")
     
     print("Clearing old trades and configs...")
+    # Keep settings, only clear trades and config
     db.query(Trade).delete()
     db.query(BotConfig).delete()
     
-    # Insert only DOGE 3m config
     db.add(BotConfig(strategy="DOGE_3M_DEGEN", is_active=True, risk_per_trade_pct=30.0))
     db.commit()
 
@@ -47,7 +47,7 @@ async def main():
         
     db.commit()
     db.close()
-    print("Database populated successfully!")
+    print("Database populated successfully with Futures trades!")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -508,51 +508,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 )}
             </div>
             
-            {!isBacktestLoading && backtestTrades.length > 0 && (
-                <div className="bg-gray-800 rounded-lg p-4 border border-gray-700 shadow-lg max-h-[300px] overflow-y-auto">
-                    <h4 className="text-white font-bold mb-3 flex items-center justify-between">
-                        <span>Historical Signals (Click to view on chart)</span>
-                        <span className="text-xs bg-blue-900 text-blue-300 px-2 py-1 rounded-full border border-blue-500">
-                            Found {backtestTrades.length} trades in 4 years
-                        </span>
-                    </h4>
-                    <table className="w-full text-left text-sm text-gray-400">
-                        <thead className="text-xs text-gray-400 uppercase bg-gray-700 sticky top-0 z-10">
-                            <tr>
-                                <th className="px-4 py-2">Date</th>
-                                <th className="px-4 py-2">Entry</th>
-                                <th className="px-4 py-2">SL</th>
-                                <th className="px-4 py-2">TP</th>
-                                <th className="px-4 py-2">{symbol === 'DOGEUSDT' ? 'PnL' : 'RR'}</th>
-                                {symbol === 'DOGEUSDT' && <th className="px-4 py-2 text-yellow-400">Balance</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {backtestTrades.slice().reverse().map((trade, idx) => (
-                                <tr 
-                                    key={idx} 
-                                    onClick={() => handleTradeClick(trade)}
-                                    className={`border-b border-gray-700 cursor-pointer transition-colors ${
-                                        activeTradeId === trade.time ? 'bg-blue-900/60' : 'hover:bg-blue-900/40'
-                                    }`}
-                                >
-                                    <td className="px-4 py-2 flex items-center">
-                                        {activeTradeId === trade.time && <span className="mr-2 text-blue-400">▶</span>}
-                                        {new Date(trade.time * 1000).toLocaleString()}
-                                    </td>
-                                    <td className="px-4 py-2 text-blue-400 font-bold">${trade.entry.toFixed(4)}</td>
-                                    <td className="px-4 py-2 text-red-400">${trade.sl.toFixed(4)}</td>
-                                    <td className="px-4 py-2 text-green-400">${trade.tp.toFixed(4)}</td>
-                                    <td className={"px-4 py-2 font-mono " + (symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "text-green-400" : (trade.pnl < 0 ? "text-red-400" : "text-gray-400")) : "text-blue-300")}>
-                                        {symbol === 'DOGEUSDT' ? (trade.pnl != null ? ((trade.pnl > 0 ? "+" : "") + trade.pnl.toFixed(2) + "$") : "OPEN") : ((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
-                                    </td>
-                                    {symbol === 'DOGEUSDT' && <td className="px-4 py-2 font-mono text-yellow-400 font-bold">${trade.balance_after?.toFixed(2)}</td>}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+            
         </div>
     );
 };
