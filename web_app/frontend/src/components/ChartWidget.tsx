@@ -131,13 +131,14 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     };
 
     const fetchBacktest = async () => {
-        if (frontendCache[symbol]) {
+        // Show cached trades instantly, but ALWAYS refetch so new trades appear without a page reload
+        const hadCache = !!frontendCache[symbol];
+        if (hadCache) {
             renderBacktest(frontendCache[symbol], false);
             setIsBacktestLoading(false);
-            return;
+        } else {
+            setIsBacktestLoading(true);
         }
-
-        setIsBacktestLoading(true);
         try {
             const url = `http://${window.location.hostname}:8000/api/trades`;
             const res = await axios.get(url);
@@ -160,8 +161,10 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             // Sort trades by time just to be safe
             trades.sort((a: any, b: any) => a.time - b.time);
             
+            const previousCount = hadCache ? frontendCache[symbol].length : 0;
             frontendCache[symbol] = trades;
-            renderBacktest(trades);
+            // Pan to the latest trade on first load, or when a brand-new trade just appeared
+            renderBacktest(trades, !hadCache || trades.length > previousCount);
         } catch (e) {
             console.error("Failed to fetch backtest", e);
         } finally {
