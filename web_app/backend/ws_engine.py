@@ -48,8 +48,16 @@ async def binance_ws_loop():
                             KLINES_CACHE[cache_key].append(candle)
                             
                     # 2. If Candle Closed: Save to DB & Trigger Strategy
+                    # debug
+                    if int(time.time()) % 10 == 0:
+                        import sys
+                        print(f"WS alive, latest close: {candle['close']}")
+                        sys.stdout.flush()
+
                     if is_closed:
+                        import sys
                         print(f"Candle Closed at {candle['time']}! Saving to DB and triggering Engine...")
+                        sys.stdout.flush()
                         
                         # Save to DB
                         df = pd.DataFrame([candle])
