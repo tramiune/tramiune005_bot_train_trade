@@ -99,7 +99,7 @@ const ControlPanel: React.FC = () => {
         if (!confirm('Huỷ TOÀN BỘ lệnh đang mở trên Binance?')) return;
         setIsCanceling(true);
         try {
-            const res = await axios.post(`/api/cancel_all`);
+            const res = await axios.post(`/api/cancel_orders`);
             alert(res.data.message || 'Đã huỷ mọi lệnh!');
         } catch (error: any) {
             alert('Lỗi Huỷ lệnh: ' + (error.response?.data?.detail || error.message));
