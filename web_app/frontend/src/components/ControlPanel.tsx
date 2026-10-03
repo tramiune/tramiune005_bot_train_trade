@@ -77,10 +77,13 @@ const ControlPanel: React.FC = () => {
     };
 
     const testOrder = async () => {
-        if (!confirm('Bạn có chắc muốn Test bắn lệnh lên sàn và Telegram không? Lệnh sẽ huỷ sau 10 giây.')) return;
+        const entry = prompt("Nhập giá Entry (Limit Price) để test lệnh (VD: 0.0925):");
+        if (!entry) return;
+        const side = confirm("Bạn muốn bắn lệnh LONG? (Nhấn OK để chọn LONG, Cancel để chọn SHORT)") ? "LONG" : "SHORT";
+        
         setIsTesting(true);
         try {
-            const res = await axios.post(`/api/test_order`);
+            const res = await axios.post(`/api/test_order`, { entry_price: parseFloat(entry), side: side });
             alert(res.data.message || 'Lệnh Test đã được gửi!');
         } catch (error: any) {
             alert('Lỗi Test Order: ' + (error.response?.data?.detail || error.message));
