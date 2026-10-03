@@ -108,7 +108,7 @@ class TradingEngine:
             except Exception as e:
                 self.log(f"[{symbol}] Failed to set leverage: {e}", "WARNING")
                 
-            await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, sl_price, tp_price)
+            await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry, sl_price, tp_price)
         else:
             self.log(f"[{symbol}] API keys NOT found. Running in PAPER TRADING mode.")
 
