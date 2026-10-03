@@ -438,45 +438,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             fetchBacktest();
         });
 
-        const wsUrl = `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${symbol === 'DOGEUSDT' ? '3m' : '1h'}`;
-        const ws = new WebSocket(wsUrl);
-
-        ws.onmessage = (event) => {
-            const message = JSON.parse(event.data);
-            const kline = message.k;
-            const newTick = {
-                time: (kline.t / 1000) as any,
-                open: parseFloat(kline.o),
-                high: parseFloat(kline.h),
-                low: parseFloat(kline.l),
-                close: parseFloat(kline.c),
-            };
-            
-            candlestickSeries.update(newTick);
-            
-            if (candleDataRef.current.length > 0) {
-                const lastIdx = candleDataRef.current.length - 1;
-                if (candleDataRef.current[lastIdx].time === newTick.time) {
-                    candleDataRef.current[lastIdx] = newTick;
-                } else if (newTick.time > candleDataRef.current[lastIdx].time) {
-                    candleDataRef.current.push(newTick);
-                }
-                
-                // Update indicators dynamically
-                if (symbol === 'DOGEUSDT') {
-                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
-                    const kcData = calculateKC(candleDataRef.current, 20, 2.0);
-                    
-                    if (bbData.upper.length > 0 && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update(bbData.upper[bbData.upper.length - 1]);
-                    if (bbData.lower.length > 0 && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update(bbData.lower[bbData.lower.length - 1]);
-                    if (bbData.mid.length > 0 && midSeriesRef.current) midSeriesRef.current.update(bbData.mid[bbData.mid.length - 1]);
-                    if (kcData.upper.length > 0 && kcUpperSeriesRef.current) kcUpperSeriesRef.current.update(kcData.upper[kcData.upper.length - 1]);
-                    if (kcData.lower.length > 0 && kcLowerSeriesRef.current) kcLowerSeriesRef.current.update(kcData.lower[kcData.lower.length - 1]);
-                }
-            }
-        };
-
-        const onVisibleLogicalRangeChanged = (logicalRange: LogicalRange | null) => {
+                const onVisibleLogicalRangeChanged = (logicalRange: LogicalRange | null) => {
             if (!logicalRange) return;
             if (logicalRange.from < 10) {
                 if (earliestTimeRef.current) {
@@ -494,7 +456,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         chart.timeScale().subscribeVisibleTimeRangeChange(onVisibleTimeRangeChanged);
 
         return () => {
-            ws.close();
+            
             chart.timeScale().unsubscribeVisibleLogicalRangeChange(onVisibleLogicalRangeChanged);
             chart.timeScale().unsubscribeVisibleTimeRangeChange(onVisibleTimeRangeChanged);
             chart.remove();
