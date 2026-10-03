@@ -11,7 +11,6 @@ const ControlPanel: React.FC = () => {
     const [isTesting, setIsTesting] = useState(false);
     const [isCanceling, setIsCanceling] = useState(false);
     const [riskPct, setRiskPct] = useState<number>(30);
-    const [leverage, setLeverage] = useState<number>(20);
     const [isSavingSettings, setIsSavingSettings] = useState(false);
 
     useEffect(() => {
@@ -34,7 +33,6 @@ const ControlPanel: React.FC = () => {
         try {
             const res = await axios.get(`${API_BASE}/settings`);
             setRiskPct(res.data.risk_pct);
-            setLeverage(res.data.leverage);
         } catch (e) {
             console.error("Error fetching settings", e);
         }
@@ -44,11 +42,10 @@ const ControlPanel: React.FC = () => {
         setIsSavingSettings(true);
         try {
             const res = await axios.post(`${API_BASE}/settings`, {
-                risk_pct: riskPct,
-                leverage: leverage
+                risk_pct: riskPct
             });
             if (res.data.status === 'ok') {
-                alert("Đã lưu cấu hình thành công!" + (res.data.leverage_updated_on_binance ? " Đã đồng bộ đòn bẩy lên Binance." : " Lỗi đồng bộ đòn bẩy, bạn hãy tự kiểm tra trên app Binance nhé."));
+                alert("Đã lưu tỷ lệ rủi ro thành công! Đòn bẩy sẽ được Bot tự động tính toán lúc vào lệnh.");
             }
         } catch (e) {
             alert("Lỗi khi lưu cấu hình!");
@@ -152,15 +149,7 @@ const ControlPanel: React.FC = () => {
                             className="w-full bg-gray-700 text-white rounded p-2 border border-gray-600 focus:outline-none focus:border-purple-500"
                         />
                     </div>
-                    <div>
-                        <label className="block text-sm text-gray-400 mb-1">Đòn Bẩy (Leverage)</label>
-                        <input 
-                            type="number" 
-                            value={leverage} 
-                            onChange={(e) => setLeverage(Number(e.target.value))}
-                            className="w-full bg-gray-700 text-white rounded p-2 border border-gray-600 focus:outline-none focus:border-purple-500"
-                        />
-                    </div>
+
                     <button 
                         onClick={saveSettings}
                         disabled={isSavingSettings}
