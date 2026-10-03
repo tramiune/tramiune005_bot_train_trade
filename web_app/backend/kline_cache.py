@@ -16,7 +16,7 @@ async def prefetch_klines():
     table_name = f"klines_{symbol.lower()}_{interval}"
     
     print(f"Initializing Persistent Cache for {cache_key}...")
-    exchange = ccxt.binance({'enableRateLimit': True})
+    exchange = ccxt.binance({'enableRateLimit': True, 'options': {'defaultType': 'future'}})
     
     try:
         # 1. Load from Database if exists

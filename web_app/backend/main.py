@@ -214,7 +214,7 @@ def get_klines(symbol: str, interval: str, limit: int = 1000, endTime: int = Non
     if cache_key not in KLINES_CACHE:
         # Fallback to direct fetch if cache is still building
         import ccxt
-        exchange = ccxt.binance()
+        exchange = ccxt.binance({'options': {'defaultType': 'future'}})
         params = {}
         if endTime:
             params['endTime'] = endTime

@@ -12,7 +12,7 @@ trader_instance = Trader()
 async def binance_ws_loop():
     symbol = "dogeusdt"
     interval = "3m"
-    uri = f"wss://stream.binance.com:9443/ws/{symbol}@kline_{interval}"
+    uri = f"wss://fstream.binance.com/ws/{symbol}@kline_{interval}"
     
     cache_key = "DOGEUSDT_3m"
     table_name = "klines_dogeusdt_3m"
