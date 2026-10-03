@@ -37,6 +37,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const [backtestTrades, setBacktestTrades] = useState<any[]>([]);
     const [isBacktestLoading, setIsBacktestLoading] = useState<boolean>(true);
     const [activeTradeId, setActiveTradeId] = useState<number | null>(null);
+    const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
     
     const reapplyMarkersAndLines = () => {
@@ -225,6 +226,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 earliestTimeRef.current = uniqueData[0].time;
                 if (seriesRef.current) {
                     seriesRef.current.setData(uniqueData);
+                    setLastUpdate(new Date());
                     const bbData = calculateBB(uniqueData, 20, 2.0);
                     const kcData = calculateKC(uniqueData, 20, 1.5);
                     if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
@@ -458,9 +460,9 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             <div className="w-full bg-[#1E222D] rounded-lg overflow-hidden border border-gray-700 shadow-lg flex flex-col relative">
                 <div className="p-4 border-b border-gray-700 flex justify-between items-center">
                     <h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - {symbol === 'DOGEUSDT' ? '3m (DEGEN MODE)' : '1H'}</h3>
-                    <span className="flex items-center text-xs text-green-400">
-                        <span className="w-2 h-2 rounded-full bg-green-400 mr-2 animate-pulse"></span>
-                        Live + Backtest Active
+                    <span className={`flex items-center text-xs ${lastUpdate && (new Date().getTime() - lastUpdate.getTime() < 10000) ? 'text-green-400' : 'text-orange-400'}`}>
+                        <span className={`w-2 h-2 rounded-full mr-2 ${lastUpdate && (new Date().getTime() - lastUpdate.getTime() < 10000) ? 'bg-green-400 animate-pulse' : 'bg-orange-400'}`}></span>
+                        {lastUpdate ? `Last tick: ${lastUpdate.toLocaleTimeString()}` : 'Connecting...'}
                     </span>
                 </div>
                 

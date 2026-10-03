@@ -3,19 +3,41 @@ import re
 with open("components/ControlPanel.tsx", "r") as f:
     content = f.read()
 
-# Find index of "{/* Strategy List */}"
-idx = content.find("{/* Strategy List */}")
-if idx != -1:
-    # We want to keep everything before idx
-    # and just close the root div
-    before = content[:idx]
-    after = """        </div>
-    );
-};
+old_fetch = """        const fetchStatus = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/status`);
+                setStatus(res.data.status);
+                const tgRes = await axios.get(`${API_BASE}/telegram/status`);
+                setTgReady(tgRes.data.ready);
+            } catch (e) {
+                console.error(e);
+            }
+        };"""
 
-export default ControlPanel;
-"""
-    content = before + after
+new_fetch = """        const fetchStatus = async () => {
+            try {
+                const res = await axios.get(`${API_BASE}/status`);
+                setStatus(res.data.status);
+                const tgRes = await axios.get(`${API_BASE}/telegram/status`);
+                setTgReady(tgRes.data.ready);
+            } catch (e) {
+                console.error(e);
+                setStatus("OFFLINE");
+            }
+        };"""
+
+content = content.replace(old_fetch, new_fetch)
+
+old_ui = """                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        status === 'RUNNING' ? 'bg-green-900 text-green-400 border border-green-500' : 'bg-red-900 text-red-400 border border-red-500'
+                    }`}>"""
+
+new_ui = """                    <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                        status === 'RUNNING' ? 'bg-green-900 text-green-400 border border-green-500' : status === 'OFFLINE' ? 'bg-gray-800 text-gray-500 border border-gray-600' : 'bg-red-900 text-red-400 border border-red-500'
+                    }`}>"""
+
+content = content.replace(old_ui, new_ui)
 
 with open("components/ControlPanel.tsx", "w") as f:
     f.write(content)
+print("ControlPanel patched!")

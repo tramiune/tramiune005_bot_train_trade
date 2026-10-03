@@ -22,6 +22,7 @@ const ControlPanel: React.FC = () => {
                 setTgReady(tgRes.data.ready);
             } catch (e) {
                 console.error(e);
+                setStatus("OFFLINE");
             }
         };
         fetchStatus();
@@ -188,7 +189,7 @@ const ControlPanel: React.FC = () => {
                 <div className="flex items-center justify-between mb-6">
                     <span className="text-gray-400 text-sm">Engine Status:</span>
                     <span className={`px-3 py-1 rounded-full text-xs font-bold ${
-                        status === 'RUNNING' ? 'bg-green-900 text-green-400 border border-green-500' : 'bg-red-900 text-red-400 border border-red-500'
+                        status === 'RUNNING' ? 'bg-green-900 text-green-400 border border-green-500' : status === 'OFFLINE' ? 'bg-gray-800 text-gray-500 border border-gray-600' : 'bg-red-900 text-red-400 border border-red-500'
                     }`}>
                         {status}
                     </span>
