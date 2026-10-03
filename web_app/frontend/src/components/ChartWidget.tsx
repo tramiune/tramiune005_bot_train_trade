@@ -461,6 +461,18 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 } else if (newTick.time > candleDataRef.current[lastIdx].time) {
                     candleDataRef.current.push(newTick);
                 }
+                
+                // Update indicators dynamically
+                if (symbol === 'DOGEUSDT') {
+                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
+                    const kcData = calculateKC(candleDataRef.current, 20, 2.0);
+                    
+                    if (bbData.upper.length > 0 && bbUpperSeriesRef.current) bbUpperSeriesRef.current.update(bbData.upper[bbData.upper.length - 1]);
+                    if (bbData.lower.length > 0 && bbLowerSeriesRef.current) bbLowerSeriesRef.current.update(bbData.lower[bbData.lower.length - 1]);
+                    if (bbData.mid.length > 0 && midSeriesRef.current) midSeriesRef.current.update(bbData.mid[bbData.mid.length - 1]);
+                    if (kcData.upper.length > 0 && kcUpperSeriesRef.current) kcUpperSeriesRef.current.update(kcData.upper[kcData.upper.length - 1]);
+                    if (kcData.lower.length > 0 && kcLowerSeriesRef.current) kcLowerSeriesRef.current.update(kcData.lower[kcData.lower.length - 1]);
+                }
             }
         };
 
