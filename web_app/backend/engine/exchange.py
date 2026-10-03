@@ -53,7 +53,7 @@ class BinanceFutures:
     async def load_markets(self):
         await self.exchange.load_markets()
 
-    async def execute_full_trade(self, symbol: str, side: str, amount: float, sl_price: float, tp_price: float):
+    async def execute_full_trade(self, symbol: str, side: str, amount: float, entry_price: float, sl_price: float, tp_price: float):
         try:
             await self.load_markets()
             
@@ -62,9 +62,11 @@ class BinanceFutures:
             formatted_sl = float(self.exchange.price_to_precision(symbol, sl_price))
             formatted_tp = float(self.exchange.price_to_precision(symbol, tp_price))
             
-            # 2. Market Entry Order
-            print(f"Placing ENTRY Market {side} for {formatted_amount} {symbol}")
-            entry_order = await self.exchange.create_order(symbol, 'market', side, formatted_amount)
+            formatted_entry = float(self.exchange.price_to_precision(symbol, entry_price))
+            
+            # 2. Limit Entry Order (Instead of Market)
+            print(f"Placing ENTRY Limit {side} for {formatted_amount} {symbol} at {formatted_entry}")
+            entry_order = await self.exchange.create_order(symbol, 'limit', side, formatted_amount, formatted_entry)
             
             # 3. Determine opposite side for SL/TP
             close_side = 'sell' if side == 'buy' else 'buy'
