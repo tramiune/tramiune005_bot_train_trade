@@ -26,9 +26,12 @@ const ControlPanel: React.FC = () => {
 
     const fetchStatus = async () => {
         try {
-            const res = await axios.get(`/api/status`);
-            setStatus(res.data.status);
-            setTgReady(res.data.telegram_configured);
+            const [statusRes, tgRes] = await Promise.all([
+                axios.get(`/api/status`),
+                axios.get(`/api/telegram/status`)
+            ]);
+            setStatus(statusRes.data.status);
+            setTgReady(tgRes.data.ready);
         } catch (error) {
             setStatus('OFFLINE');
             setTgReady(false);
