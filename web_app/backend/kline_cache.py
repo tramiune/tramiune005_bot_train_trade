@@ -3,6 +3,8 @@ import asyncio
 import pandas as pd
 import ccxt.async_support as ccxt
 import time
+from database import engine
+from sqlalchemy import text
 
 # In-memory cache for fast UI loading
 KLINES_CACHE = {}
@@ -11,27 +13,33 @@ async def prefetch_klines():
     symbol = "DOGEUSDT"
     interval = "3m"
     cache_key = f"{symbol}_{interval}"
-    csv_file = f"data/{cache_key}.csv"
-    os.makedirs("data", exist_ok=True)
+    table_name = f"klines_{symbol.lower()}_{interval}"
     
     print(f"Initializing Persistent Cache for {cache_key}...")
     exchange = ccxt.binance({'enableRateLimit': True})
     
     try:
-        # 1. Load from CSV if exists
-        if os.path.exists(csv_file):
-            print(f"Loading from local CSV {csv_file}...")
-            df = pd.read_csv(csv_file)
+        # 1. Load from Database if exists
+        with engine.connect() as conn:
+            table_exists = conn.execute(text(f"SELECT name FROM sqlite_master WHERE type='table' AND name='{table_name}';")).fetchone()
+            
+        if table_exists:
+            print(f"Loading {cache_key} from SQLite Database...")
+            df = pd.read_sql(f"SELECT * FROM {table_name} ORDER BY time ASC", con=engine)
             last_time = int(df['time'].iloc[-1]) * 1000
             print(f"Loaded {len(df)} candles. Last time: {pd.to_datetime(last_time, unit='ms')}")
         else:
-            print("No local CSV. Fetching backwards 4 years... this will take a while.")
+            print("No table found in DB. Fetching backwards 4 years... this will take a while.")
             from fetch_more import fetch_lots_of_klines
-            # Fetch less during test if needed, but the user wants it to be robust
             doge_data = await fetch_lots_of_klines(exchange, "DOGE/USDT", interval, 710000)
             df = pd.DataFrame(doge_data, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
             df['time'] = (df['time'] / 1000).astype(int)
-            df.to_csv(csv_file, index=False)
+            # Create table and insert
+            df.to_sql(table_name, con=engine, if_exists='replace', index=False)
+            # Create index for faster querying
+            with engine.connect() as conn:
+                conn.execute(text(f"CREATE INDEX idx_{table_name}_time ON {table_name} (time);"))
+                conn.commit()
             last_time = int(df['time'].iloc[-1]) * 1000
 
         # 2. Sync forward to Real-Time
@@ -54,10 +62,12 @@ async def prefetch_klines():
                 new_df = pd.DataFrame(new_candles, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
                 new_df['time'] = (new_df['time'] / 1000).astype(int)
                 
-                # Combine, drop dupes, save
+                # Append to DB directly
+                new_df.to_sql(table_name, con=engine, if_exists='append', index=False)
+                
+                # Combine in memory
                 df = pd.concat([df, new_df]).drop_duplicates(subset=['time'], keep='last').sort_values('time')
-                df.to_csv(csv_file, index=False)
-                print(f"Synced {len(new_df)} new candles to CSV!")
+                print(f"Synced {len(new_df)} new candles to Database!")
 
         # 3. Load to Memory
         KLINES_CACHE[cache_key] = df.to_dict(orient='records')
