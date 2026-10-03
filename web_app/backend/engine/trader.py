@@ -360,7 +360,7 @@ class TradingEngine:
             # Lấy danh sách lệnh đang chờ
             open_orders = await self.exchange.exchange.fapiPrivateGetOpenOrders()
             # Lấy vị thế hiện tại
-            positions = await self.exchange.exchange.fapiPrivateGetPositionRisk()
+            positions = await self.exchange.exchange.fapiPrivateV2GetPositionRisk()
         except Exception as e:
             self.log(f"Error fetching Binance status in manage_open_trades: {e}", "ERROR")
             db.close()
