@@ -96,19 +96,19 @@ class TradingEngine:
                 
             await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry_price, sl_price, tp_price)
             
-            # Send Telegram Notification
-            msg = f"🧪 *TEST: {strategy} SIGNAL*\n"
-            msg += f"**Pair:** {symbol}\n"
-            msg += f"**Side:** {side}\n"
-            msg += f"**Entry:** {entry_price:.5f}\n"
-            msg += f"**Stop Loss:** {sl_price:.5f}\n"
-            msg += f"**Take Profit:** {tp_price:.5f}\n"
-            msg += f"**Size:** {position_size:.1f}\n"
-            msg += f"**Leverage Used:** {required_leverage}x\n"
-            msg += f"**Risk Amount:** ${risk_amount:.1f}"
-            
-            from engine.telegram import send_telegram_message
-            send_telegram_message(msg)
+            # Send Telegram Notification (HTML parse mode, same as real signals)
+            msg = (
+                f"🧪 <b>TEST: {strategy} SIGNAL</b>\n\n"
+                f"<b>Pair:</b> {symbol}\n"
+                f"<b>Side:</b> {side}\n"
+                f"<b>Entry:</b> {entry_price:.5f}\n"
+                f"<b>Stop Loss:</b> {sl_price:.5f}\n"
+                f"<b>Take Profit:</b> {tp_price:.5f}\n"
+                f"<b>Size:</b> {position_size:.1f}\n"
+                f"<b>Leverage:</b> {required_leverage}x\n"
+                f"<b>Risk:</b> {current_risk_pct}% (${risk_amount:.1f})"
+            )
+            await send_telegram_message(msg)
             return {"status": "ok", "message": "Test lệnh đã được bắn lên Binance và Telegram!"}
         else:
             return {"status": "error", "message": "Không tìm thấy API Keys!"}

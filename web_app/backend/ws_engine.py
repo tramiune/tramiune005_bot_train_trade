@@ -70,7 +70,6 @@ async def binance_ws_loop():
                     await trader_instance.on_candle_closed()
             
             # SMART POLLING: Calculate seconds until next 3m candle close
-            import time
             now_ts = int(time.time())
             seconds_to_next_candle = 180 - (now_ts % 180)
             
