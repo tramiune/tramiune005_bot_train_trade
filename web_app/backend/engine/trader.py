@@ -113,7 +113,7 @@ class TradingEngine:
         else:
             return {"status": "error", "message": "Không tìm thấy API Keys!"}
 
-    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG'):
+    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG', tag: str = ""):
         entry_price = float(df["close"].iloc[-2])
         
         if strategy == "XRP_PURE_ROBUST":
@@ -193,7 +193,7 @@ class TradingEngine:
             self.log(f"[{symbol}] API keys NOT found. Running in PAPER TRADING mode.")
 
         message = (
-            f"🚀 <b>{strategy} SIGNAL DETECTED</b>\n\n"
+            f"🚀 <b>{strategy} SIGNAL DETECTED</b>{tag}\n\n"
             f"<b>Pair:</b> {symbol}\n"
             f"<b>Side:</b> {side}\n"
             f"<b>Entry:</b> {entry_price:.4f}\n"
@@ -281,6 +281,57 @@ class TradingEngine:
             if db:
                 db.close()
             
+    async def recover_missed_signal(self):
+        """If a DOGE_3M_DEGEN signal fired while the bot was down/crashed and it is still worth entering
+        (see engine.recovery), enter it now through the exact same execute_trade used for live signals."""
+        try:
+            if not self.is_running:
+                self.log("Signal recovery skipped: bot is STOPPED.")
+                return
+
+            from kline_cache import KLINES_CACHE
+            data = KLINES_CACHE.get("DOGEUSDT_3m")
+            if not data:
+                return
+
+            from engine.recovery import find_recoverable_signal
+            df = pd.DataFrame(data).rename(columns={'time': 'timestamp'})
+            df['timestamp'] = df['timestamp'] * 1000
+            # The last cached row is the candle still forming -> never evaluate it
+            closed = df.iloc[:-1].reset_index(drop=True)
+            sig, reason = find_recoverable_signal(closed)
+            if not sig:
+                self.log(f"Signal recovery: nothing to enter ({reason}).")
+                return
+
+            from datetime import datetime
+            signal_dt = datetime.fromtimestamp(sig['time_ms'] / 1000)
+            db = SessionLocal()
+            try:
+                has_open = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN", Trade.status == "OPEN").first()
+                already = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN", Trade.entry_time >= signal_dt).first()
+            finally:
+                db.close()
+            if has_open or already:
+                self.log("Signal recovery skipped: a trade is already open or was already taken for this signal.")
+                return
+
+            configs = await self.get_active_configs()
+            conf = next((c for c in configs if c.strategy == "DOGE_3M_DEGEN"), None)
+            if conf is None:
+                return
+
+            # df rows up to and including the candle AFTER the signal, so execute_trade's df["close"].iloc[-2]
+            # is exactly the signal candle's close (same entry price as the live path would have used).
+            trade_df = df.iloc[:sig['index'] + 2].copy()
+            self.last_trade_time["DOGE_3M_DEGEN"] = trade_df["timestamp"].iloc[-2]
+            self.log(f"Signal recovery: entering missed {sig['side']} signal ({sig['age_candles']} candles old, "
+                     f"entry {sig['entry']}, price drift {sig['drift_pct']}%).")
+            await self.execute_trade("DOGE/USDT", "DOGE_3M_DEGEN", conf.risk_per_trade_pct, trade_df, 1.0,
+                                     side=sig['side'], tag=f" (♻️ khôi phục, tín hiệu cách {sig['age_candles'] * 3} phút)")
+        except Exception as e:
+            self.log(f"Signal recovery error: {e}", "ERROR")
+
     async def start(self):
         self.is_running = True
         self.log("Trading Engine set to ACTIVE (Will execute new trades).")
@@ -293,6 +344,7 @@ class TradingEngine:
         db.close()
         
         await self.sync_missed_trades()
+        await self.recover_missed_signal()
         self.log("Engine is now waiting for WebSocket candle close events...")
 
 
