@@ -90,22 +90,14 @@ class TradingEngine:
             await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry_price, sl_price, tp_price)
             
             # Send Telegram Notification
-            msg = f"🧪 *TEST: {strategy} SIGNAL*
-"
-            msg += f"**Pair:** {symbol}
-"
-            msg += f"**Side:** {side}
-"
-            msg += f"**Entry:** {entry_price:.5f}
-"
-            msg += f"**Stop Loss:** {sl_price:.5f}
-"
-            msg += f"**Take Profit:** {tp_price:.5f}
-"
-            msg += f"**Size:** {position_size:.1f}
-"
-            msg += f"**Leverage Used:** {required_leverage}x
-"
+            msg = f"🧪 *TEST: {strategy} SIGNAL*\n"
+            msg += f"**Pair:** {symbol}\n"
+            msg += f"**Side:** {side}\n"
+            msg += f"**Entry:** {entry_price:.5f}\n"
+            msg += f"**Stop Loss:** {sl_price:.5f}\n"
+            msg += f"**Take Profit:** {tp_price:.5f}\n"
+            msg += f"**Size:** {position_size:.1f}\n"
+            msg += f"**Leverage Used:** {required_leverage}x\n"
             msg += f"**Risk Amount:** ${risk_amount:.1f}"
             
             from engine.telegram import send_telegram_message
