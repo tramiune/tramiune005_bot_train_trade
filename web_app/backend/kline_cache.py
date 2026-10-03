@@ -25,7 +25,8 @@ async def prefetch_klines():
             
         if table_exists:
             print(f"Loading {cache_key} from SQLite Database...")
-            df = pd.read_sql(f"SELECT * FROM {table_name} ORDER BY time ASC", con=engine)
+            df = pd.read_sql(f"SELECT * FROM {table_name} ORDER BY time DESC LIMIT 2000", con=engine)
+            df = df.sort_values('time')
             last_time = int(df['time'].iloc[-1]) * 1000
             print(f"Loaded {len(df)} candles. Last time: {pd.to_datetime(last_time, unit='ms')}")
         else:
@@ -70,7 +71,7 @@ async def prefetch_klines():
                 print(f"Synced {len(new_df)} new candles to Database!")
 
         # 3. Load to Memory
-        KLINES_CACHE[cache_key] = df.to_dict(orient='records')
+        KLINES_CACHE[cache_key] = df.tail(2000).to_dict(orient='records')
         print(f"Cache Ready! {len(KLINES_CACHE[cache_key])} total candles.")
     except Exception as e:
         print(f"Pre-fetch failed: {e}")
