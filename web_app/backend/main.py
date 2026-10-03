@@ -92,7 +92,7 @@ class TestOrderRequest(BaseModel):
 @app.post("/api/test_order")
 async def test_order(req: TestOrderRequest):
     try:
-        return await engine.execute_test_trade(req.entry_price, req.side)
+        return await trader_instance.execute_test_trade(req.entry_price, req.side)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 
