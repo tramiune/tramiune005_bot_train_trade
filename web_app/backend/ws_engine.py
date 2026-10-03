@@ -1,6 +1,4 @@
 import asyncio
-import json
-import websockets
 import pandas as pd
 from database import engine
 from kline_cache import KLINES_CACHE
@@ -10,65 +8,68 @@ import time
 trader_instance = TradingEngine()
 
 async def binance_ws_loop():
-    symbol = "dogeusdt"
+    symbol = "DOGE/USDT"
     interval = "3m"
-    uri = f"wss://stream.binance.com:9443/ws/{symbol}@kline_{interval}"
-    
     cache_key = "DOGEUSDT_3m"
     table_name = "klines_dogeusdt_3m"
     
-    print("Starting Binance WebSocket connection...")
+    print("Starting Binance REST Polling (Fallback for WS)...")
     
     while True:
         try:
-            async with websockets.connect(uri) as ws:
-                print("WebSocket Connected!")
-                while True:
-                    msg = await ws.recv()
-                    import sys
-                    print(f"RAW MSG: {msg[:100]}")
-                    sys.stdout.flush()
-                    data = json.loads(msg)
-                    k = data['k']
-                    
-                    is_closed = k['x']
-                    
-                    candle = {
-                        "time": int(k['t'] / 1000),
-                        "open": float(k['o']),
-                        "high": float(k['h']),
-                        "low": float(k['l']),
-                        "close": float(k['c']),
-                        "volume": float(k['v'])
+            ohlcv = await trader_instance.exchange.fetch_ohlcv(symbol, interval, limit=2)
+            if not ohlcv or len(ohlcv) < 2:
+                await asyncio.sleep(2)
+                continue
+                
+            current_candle_data = ohlcv[-1]
+            candle = {
+                "time": int(current_candle_data[0] / 1000),
+                "open": float(current_candle_data[1]),
+                "high": float(current_candle_data[2]),
+                "low": float(current_candle_data[3]),
+                "close": float(current_candle_data[4]),
+                "volume": float(current_candle_data[5])
+            }
+            
+            # Debug alive
+            if int(time.time()) % 10 == 0:
+                import sys
+                print(f"REST Polling alive, latest close: {candle['close']}")
+                sys.stdout.flush()
+            
+            if cache_key in KLINES_CACHE and len(KLINES_CACHE[cache_key]) > 0:
+                last_idx = len(KLINES_CACHE[cache_key]) - 1
+                
+                if KLINES_CACHE[cache_key][last_idx]['time'] == candle['time']:
+                    KLINES_CACHE[cache_key][last_idx] = candle
+                elif candle['time'] > KLINES_CACHE[cache_key][last_idx]['time']:
+                    # A new candle just started! This means the PREVIOUS candle just closed!
+                    closed_candle_data = ohlcv[-2]
+                    closed_candle = {
+                        "time": int(closed_candle_data[0] / 1000),
+                        "open": float(closed_candle_data[1]),
+                        "high": float(closed_candle_data[2]),
+                        "low": float(closed_candle_data[3]),
+                        "close": float(closed_candle_data[4]),
+                        "volume": float(closed_candle_data[5])
                     }
                     
-                    # 1. Update Memory Cache (replace last candle if time matches, else append)
-                    if cache_key in KLINES_CACHE and len(KLINES_CACHE[cache_key]) > 0:
-                        last_idx = len(KLINES_CACHE[cache_key]) - 1
-                        if KLINES_CACHE[cache_key][last_idx]['time'] == candle['time']:
-                            KLINES_CACHE[cache_key][last_idx] = candle
-                        elif candle['time'] > KLINES_CACHE[cache_key][last_idx]['time']:
-                            KLINES_CACHE[cache_key].append(candle)
-                            
-                    # 2. If Candle Closed: Save to DB & Trigger Strategy
-                    # debug
-                    if int(time.time()) % 10 == 0:
-                        import sys
-                        print(f"WS alive, latest close: {candle['close']}")
-                        sys.stdout.flush()
-
-                    if is_closed:
-                        import sys
-                        print(f"Candle Closed at {candle['time']}! Saving to DB and triggering Engine...")
-                        sys.stdout.flush()
+                    if KLINES_CACHE[cache_key][last_idx]['time'] == closed_candle['time']:
+                        KLINES_CACHE[cache_key][last_idx] = closed_candle
                         
-                        # Save to DB
-                        df = pd.DataFrame([candle])
-                        df.to_sql(table_name, con=engine, if_exists='append', index=False)
-                        
-                        # Trigger Strategy
-                        await trader_instance.on_candle_closed()
-                        
+                    KLINES_CACHE[cache_key].append(candle)
+                    
+                    import sys
+                    print(f"Candle Closed at {closed_candle['time']}! Saving to DB and triggering Engine...")
+                    sys.stdout.flush()
+                    
+                    df = pd.DataFrame([closed_candle])
+                    df.to_sql(table_name, con=engine, if_exists='append', index=False)
+                    
+                    await trader_instance.on_candle_closed()
+            
+            await asyncio.sleep(2)
         except Exception as e:
-            print(f"WebSocket disconnected: {e}. Reconnecting in 5s...")
+            print(f"REST Polling error: {e}. Retrying in 5s...")
             await asyncio.sleep(5)

@@ -198,7 +198,8 @@ class TradingEngine:
         except Exception as e:
             self.log(f"Auto-Sync error: {e}", "ERROR")
         finally:
-            db.close()
+            if db:
+                db.close()
             
     async def start(self):
         self.is_running = True
