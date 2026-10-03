@@ -59,6 +59,23 @@ async def stop_bot():
         engine_instance.stop()
     return {"status": "STOPPED"}
 
+@app.get("/api/balance")
+async def get_balance():
+    from engine.exchange import get_exchange
+    exchange = get_exchange()
+    try:
+        if not exchange.apiKey or not exchange.secret:
+            return {"balance": 0.0, "status": "keys_missing"}
+        
+        balance = await exchange.fetch_balance()
+        # USDT available balance in futures wallet
+        usdt_free = balance.get('USDT', {}).get('free', 0.0)
+        return {"balance": usdt_free, "status": "ok"}
+    except Exception as e:
+        return {"balance": 0.0, "status": "error", "message": str(e)}
+    finally:
+        await exchange.close()
+
 @app.get("/api/telegram/status")
 def get_telegram_status():
     import os

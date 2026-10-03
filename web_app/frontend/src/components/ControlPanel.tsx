@@ -7,6 +7,7 @@ const API_BASE = `http://${window.location.hostname}:8000/api`;
 const ControlPanel: React.FC = () => {
     const [status, setStatus] = useState<string>("STOPPED");
     const [tgReady, setTgReady] = useState<boolean>(false);
+    const [balance, setBalance] = useState<number | null>(null);
 
     useEffect(() => {
         const fetchStatus = async () => {
@@ -15,6 +16,13 @@ const ControlPanel: React.FC = () => {
                 setStatus(res.data.status);
                 const tgRes = await axios.get(`${API_BASE}/telegram/status`);
                 setTgReady(tgRes.data.ready);
+                
+                const balRes = await axios.get(`${API_BASE}/balance`);
+                if (balRes.data.status === 'ok') {
+                    setBalance(balRes.data.balance);
+                } else {
+                    setBalance(null); // keys missing or error
+                }
             } catch (e) {
                 console.error(e);
             }
@@ -57,6 +65,13 @@ const ControlPanel: React.FC = () => {
                         {tgReady ? 'TG Ready' : 'TG Disconnected'}
                     </div>
                 </h3>
+                
+                <div className="flex items-center justify-between mb-4 pb-4 border-b border-gray-700">
+                    <span className="text-gray-400 text-sm">Futures Available:</span>
+                    <span className="text-yellow-400 font-bold font-mono">
+                        {balance !== null ? `$${balance.toFixed(2)}` : 'N/A'}
+                    </span>
+                </div>
                 
                 <div className="flex items-center justify-between mb-6">
                     <span className="text-gray-400 text-sm">Engine Status:</span>
