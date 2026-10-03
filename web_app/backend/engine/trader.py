@@ -216,7 +216,7 @@ class TradingEngine:
                     if is_unfilled:
                         # Price hit SL/TP BEFORE the Limit order filled! CANCEL IT!
                         self.log(f"Trade {trade.id} hit SL/TP but limit order never filled! Canceling...")
-                        await self.exchange.exchange.cancel_all_orders(trade.symbol)
+                        await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': trade.symbol.replace('/', '')})
                         trade.status = "CANCELED"
                         trade.pnl = 0
                         trade.exit_price = hit_price
