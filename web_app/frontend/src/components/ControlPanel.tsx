@@ -158,20 +158,19 @@ const ControlPanel: React.FC = () => {
                 </div>
                 
                 <div className="flex space-x-2 mt-2">
-                    <button 
-                        onClick={startBot}
-                        disabled={status === 'RUNNING'}
-                        className={`flex-1 flex items-center justify-center py-1.5 text-xs rounded font-semibold transition-colors ${status === 'RUNNING' ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500 text-white'}`}
-                    >
-                        <Play className="w-3 h-3 mr-1" /> Start
-                    </button>
-                    <button 
-                        onClick={stopBot}
-                        disabled={status === 'STOPPED'}
-                        className={`flex-1 flex items-center justify-center py-1.5 text-xs rounded font-semibold transition-colors ${status === 'STOPPED' ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-red-600 hover:bg-red-500 text-white'}`}
-                    >
-                        <Square className="w-3 h-3 mr-1" /> Stop
-                    </button>
+                    <div className="flex items-center bg-gray-800 rounded px-3 space-x-2">
+                        <span className={`text-xs font-bold ${status === 'RUNNING' ? 'text-green-500' : 'text-gray-500'}`}>
+                            {status === 'RUNNING' ? 'BOT ON' : 'BOT OFF'}
+                        </span>
+                        <button 
+                            onClick={status === 'RUNNING' ? stopBot : startBot}
+                            disabled={status === 'OFFLINE' || status === 'UNKNOWN'}
+                            className={`relative inline-flex h-4 w-8 items-center rounded-full transition-colors focus:outline-none ${status === 'RUNNING' ? 'bg-green-600' : 'bg-gray-600'} ${(status === 'OFFLINE' || status === 'UNKNOWN') ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        >
+                            <span className={`inline-block h-2.5 w-2.5 transform rounded-full bg-white transition-transform ${status === 'RUNNING' ? 'translate-x-4.5' : 'translate-x-0.5'}`} style={{ transform: status === 'RUNNING' ? 'translateX(1.125rem)' : 'translateX(0.125rem)' }} />
+                        </button>
+                    </div>
+
                     <button 
                         onClick={testOrder}
                         disabled={isTesting}
