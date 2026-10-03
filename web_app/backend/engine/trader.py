@@ -71,6 +71,13 @@ class TradingEngine:
         self.log(f"[{symbol}] TEST Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size} (Leverage: {required_leverage}x)")
         
         if self.exchange.api_key and self.exchange.secret_key:
+            # CANCEL ALL EXISTING ORDERS FOR THIS SYMBOL BEFORE TESTING
+            try:
+                await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
+                await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
+            except Exception:
+                pass
+                
             try:
                 await self.exchange.exchange.fapiPrivatePostMarginType({
                     'symbol': symbol.replace('/', ''),
