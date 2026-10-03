@@ -121,6 +121,11 @@ class TradingEngine:
             last_trade = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN").order_by(Trade.entry_time.desc()).first()
             last_trade_time = pd.to_datetime(last_trade.entry_time) if last_trade else pd.Timestamp('2000-01-01')
             
+            if last_trade and last_trade.status == "OPEN":
+                self.log("Auto-Sync skipped: A trade is currently OPEN.")
+                db.close()
+                return
+                
             added = 0
             for sig in signals:
                 entry_time = pd.to_datetime(sig['time'], unit='ms')
@@ -132,11 +137,12 @@ class TradingEngine:
                 sl_price = entry_price * (1 + 0.15) if side == 'SHORT' else entry_price * (1 - 0.15)
                 tp_price = entry_price * (1 - 0.05) if side == 'SHORT' else entry_price * (1 + 0.05)
                 
+                # Convert UTC to local naive (using simple timedelta or tz_convert)
+                local_dt = entry_time.tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None)
+                
                 trade = Trade(
                     symbol="DOGE/USDT",
                     strategy="DOGE_3M_DEGEN",
-                    # Convert UTC to local naive (using simple timedelta or tz_convert)
-                    local_dt = entry_time.tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None)
                     side=side,
                     entry_time=local_dt.to_pydatetime(),
                     entry_price=entry_price,
