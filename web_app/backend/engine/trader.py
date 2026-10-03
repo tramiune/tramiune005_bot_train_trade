@@ -113,7 +113,7 @@ class TradingEngine:
         else:
             return {"status": "error", "message": "Không tìm thấy API Keys!"}
 
-    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG', tag: str = ""):
+    async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG', tag: str = "", entry_time=None):
         entry_price = float(df["close"].iloc[-2])
         
         if strategy == "XRP_PURE_ROBUST":
@@ -215,7 +215,7 @@ class TradingEngine:
             take_profit=tp_price,
             size=position_size,
             status="OPEN",
-            entry_time=now_local
+            entry_time=entry_time or now_local
         )
         db.add(trade)
         db.commit()
@@ -328,7 +328,8 @@ class TradingEngine:
             self.log(f"Signal recovery: entering missed {sig['side']} signal ({sig['age_candles']} candles old, "
                      f"entry {sig['entry']}, price drift {sig['drift_pct']}%).")
             await self.execute_trade("DOGE/USDT", "DOGE_3M_DEGEN", conf.risk_per_trade_pct, trade_df, 1.0,
-                                     side=sig['side'], tag=f" (♻️ khôi phục, tín hiệu cách {sig['age_candles'] * 3} phút)")
+                                     side=sig['side'], tag=f" (♻️ khôi phục, tín hiệu cách {sig['age_candles'] * 3} phút)",
+                                     entry_time=datetime.fromtimestamp(sig['time_ms'] / 1000 + 180))
         except Exception as e:
             self.log(f"Signal recovery error: {e}", "ERROR")
 
