@@ -110,6 +110,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 candleDataRef.current = formattedData;
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
+                    setLastUpdate(new Date());
                     const bbData = calculateBB(candleDataRef.current, 20, 2.0);
                     const kcData = calculateKC(candleDataRef.current, 20, 1.5);
                     if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
