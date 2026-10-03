@@ -69,10 +69,10 @@ async def test_order():
         amount = 150
         entry_price = 0.05000 
         sl_price = 0.04000
-        tp_price = 0.06000
+        tp_price = 0.50000
         
         await exchange.execute_full_trade(symbol, side, amount, entry_price, sl_price, tp_price)
-        return {"status": "ok", "message": f"Đặt thành công cụm 3 lệnh: LIMIT (0.05), SL (0.04), TP (0.06)"}
+        return {"status": "ok", "message": f"Đặt thành công cụm 3 lệnh: LIMIT (0.05), SL (0.04), TP (0.50)"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
     finally:
