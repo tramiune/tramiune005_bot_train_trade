@@ -86,6 +86,8 @@ class TradingEngine:
         
         # Log to DB
         db = SessionLocal()
+        from datetime import datetime
+        now_local = datetime.now() # naive local time
         trade = Trade(
             symbol=symbol,
             strategy=strategy,
@@ -94,7 +96,8 @@ class TradingEngine:
             stop_loss=sl_price,
             take_profit=tp_price,
             size=position_size,
-            status="OPEN"
+            status="OPEN",
+            entry_time=now_local
         )
         db.add(trade)
         db.commit()
@@ -132,8 +135,10 @@ class TradingEngine:
                 trade = Trade(
                     symbol="DOGE/USDT",
                     strategy="DOGE_3M_DEGEN",
+                    # Convert UTC to local naive (using simple timedelta or tz_convert)
+                    local_dt = entry_time.tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None)
                     side=side,
-                    entry_time=entry_time.to_pydatetime(),
+                    entry_time=local_dt.to_pydatetime(),
                     entry_price=entry_price,
                     stop_loss=sl_price,
                     take_profit=tp_price,
