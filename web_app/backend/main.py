@@ -42,6 +42,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
+from pydantic import BaseModel
+class SettingsUpdate(BaseModel):
+    risk_pct: float
+
+@app.get("/api/settings")
+def get_settings(db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        settings = Settings(risk_pct=30.0)
+        db.add(settings)
+        db.commit()
+    return {"risk_pct": settings.risk_pct}
+
+@app.post("/api/settings")
+def update_settings(data: SettingsUpdate, db: Session = Depends(get_db)):
+    settings = db.query(Settings).first()
+    if not settings:
+        settings = Settings(risk_pct=data.risk_pct)
+        db.add(settings)
+    else:
+        settings.risk_pct = data.risk_pct
+    db.commit()
+    return {"status": "ok"}
+
 @app.get("/api/status")
 def get_status():
     return {"status": "RUNNING" if trader_instance.is_running else "STOPPED"}
