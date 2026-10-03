@@ -63,9 +63,9 @@ const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void, focusedTrade?
                                     <td className={`px-4 py-3 font-bold ${trade.side === 'LONG' ? 'text-green-400' : 'text-red-400'}`}>
                                         {trade.side}
                                     </td>
-                                    <td className="px-4 py-3">${trade.entry_price?.toFixed(4) || '0.0000'}</td>
+                                    <td className="px-4 py-3">${trade.entry_price?.toFixed(5) || '0.00000'}</td>
                                     <td className={`px-4 py-3 font-medium ${trade.pnl > 0 ? 'text-green-400' : trade.pnl < 0 ? 'text-red-400' : ''}`}>
-                                        {trade.exit_price ? `$${trade.exit_price.toFixed(4)}` : '-'}
+                                        {trade.exit_price ? `$${trade.exit_price.toFixed(5)}` : '-'}
                                     </td>
                                     <td className="px-4 py-3">
                                         <span className={`px-2 py-1 rounded text-xs ${trade.status === 'OPEN' ? 'bg-blue-900 text-blue-300' : trade.pnl > 0 ? 'bg-green-900 text-green-300' : 'bg-red-900 text-red-300'}`}>
