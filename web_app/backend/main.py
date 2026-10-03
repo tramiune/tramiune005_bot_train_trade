@@ -85,6 +85,10 @@ async def cancel_orders():
     try:
         symbol = 'DOGE/USDT'
         await exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
+        try:
+            await exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
+        except Exception:
+            pass
         return {"status": "ok", "message": "Đã hủy toàn bộ lệnh treo trên Binance!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
