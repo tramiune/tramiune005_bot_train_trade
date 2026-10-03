@@ -69,7 +69,7 @@ async def binance_ws_loop():
                     
                     await trader_instance.on_candle_closed()
             
-            await asyncio.sleep(2)
+            await asyncio.sleep(20)
         except Exception as e:
             print(f"REST Polling error: {e}. Retrying in 5s...")
             await asyncio.sleep(5)

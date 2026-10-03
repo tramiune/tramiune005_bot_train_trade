@@ -413,12 +413,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             fetchBacktest();
         });
         
-        // Poll backend for updates (candle close & new trades) every 5s
+        // Poll backend for updates (candle close & new trades) every 60s
         const intervalId = setInterval(() => {
             fetchKlines().then(() => {
                 fetchBacktest();
             });
-        }, 5000);
+        }, 60000);
 
                 const onVisibleLogicalRangeChanged = (logicalRange: LogicalRange | null) => {
             if (!logicalRange) return;
