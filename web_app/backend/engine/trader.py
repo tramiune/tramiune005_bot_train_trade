@@ -85,6 +85,15 @@ class TradingEngine:
         # Execute the order on Binance
         if self.exchange.api_key and self.exchange.secret_key:
             self.log(f"[{symbol}] API keys found. Sending orders to Binance...")
+            
+            # Xóa hết lệnh hiện tại để phòng rủi ro trước khi vào lệnh mới
+            try:
+                self.log(f"[{symbol}] Canceling all existing open orders before entry...")
+                await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
+                await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
+            except Exception as e:
+                pass
+                
             # Set the leverage before opening the order
             try:
                 await self.exchange.exchange.set_margin_mode('CROSSED', symbol.replace('/', ''))
@@ -204,6 +213,66 @@ class TradingEngine:
         
         await self.sync_missed_trades()
         self.log("Engine is now waiting for WebSocket candle close events...")
+
+
+    async def manage_open_trades(self):
+        db = SessionLocal()
+        open_trades = db.query(Trade).filter(Trade.status == "OPEN").all()
+        if not open_trades:
+            db.close()
+            return
+            
+        try:
+            # Lấy danh sách lệnh đang chờ
+            open_orders = await self.exchange.exchange.fapiPrivateGetOpenOrders()
+            # Lấy vị thế hiện tại
+            positions = await self.exchange.exchange.fapiPrivateGetPositionRisk()
+        except Exception as e:
+            self.log(f"Error fetching Binance status in manage_open_trades: {e}", "ERROR")
+            db.close()
+            return
+            
+        for trade in open_trades:
+            symbol_raw = trade.symbol.replace('/', '')
+            # Tìm xem có lệnh chờ nào của cặp này không
+            orders_for_symbol = [o for o in open_orders if o['symbol'] == symbol_raw]
+            
+            # Kiểm tra xem có đang có vị thế (position) không
+            position_side = "LONG" if trade.side == "LONG" else "SHORT"
+            pos = next((p for p in positions if p['symbol'] == symbol_raw and p['positionSide'] == position_side), None)
+            
+            position_amt = float(pos['positionAmt']) if pos else 0.0
+            
+            # Nếu vị thế = 0 và không còn lệnh chờ nào -> Lệnh đã kết thúc (Cắn SL/TP hoặc bị hủy)
+            if position_amt == 0 and len(orders_for_symbol) == 0:
+                self.log(f"[{trade.symbol}] Trade {trade.side} has been CLOSED/CANCELED.")
+                trade.status = "CLOSED"
+                trade.exit_time = datetime.now()
+                # Có thể gọi API hủy tất cả lệnh 1 lần nữa để dọn rác
+                try:
+                    await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol_raw})
+                    await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol_raw})
+                except:
+                    pass
+            
+            # Nếu vị thế = 0 nhưng vẫn CÒN lệnh chờ (Ví dụ: cắn SL rồi nhưng lệnh TP vẫn còn treo)
+            elif position_amt == 0 and len(orders_for_symbol) > 0:
+                # Kiểm tra xem lệnh Limit Entry còn treo không (chưa vào được lệnh)
+                is_entry_unfilled = any(o['type'] == 'LIMIT' and o['side'] == ('BUY' if trade.side == 'LONG' else 'SELL') for o in orders_for_symbol)
+                
+                if not is_entry_unfilled:
+                    # Đã vào lệnh xong, và giờ vị thế = 0 -> Đã cắn SL hoặc TP!
+                    self.log(f"[{trade.symbol}] Hit SL/TP! Canceling remaining leftover orders...")
+                    try:
+                        await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol_raw})
+                        await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol_raw})
+                    except:
+                        pass
+                    trade.status = "CLOSED"
+                    trade.exit_time = datetime.now()
+
+        db.commit()
+        db.close()
 
     async def on_candle_closed(self):
         self.log("Candle closed event received! Processing signals...")
