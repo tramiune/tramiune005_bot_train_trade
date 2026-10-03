@@ -1,13 +1,14 @@
 import asyncio
 import ccxt.async_support as ccxt
 import pandas as pd
+import time
 
 async def fetch_lots_of_klines(exchange, symbol, timeframe, limit=5000):
     all_ohlcv = []
     since = None
-    # We want to go backwards, so we use endTime, but ccxt fetch_ohlcv doesn't natively support endTime well across all exchanges.
-    # Binance supports it via params={'endTime': xxx}
     end_time = None
+    
+    start_time = time.time()
     
     while len(all_ohlcv) < limit:
         params = {}
@@ -22,5 +23,8 @@ async def fetch_lots_of_klines(exchange, symbol, timeframe, limit=5000):
             
         all_ohlcv = ohlcv + all_ohlcv
         end_time = ohlcv[0][0] - 1
+        
+        if len(all_ohlcv) % 15000 == 0:
+            print(f"Fetched {len(all_ohlcv)}/{limit} candles so far... ({(time.time() - start_time):.1f}s)")
         
     return all_ohlcv
