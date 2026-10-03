@@ -69,7 +69,18 @@ async def binance_ws_loop():
                     
                     await trader_instance.on_candle_closed()
             
-            await asyncio.sleep(20)
+            # SMART POLLING: Calculate seconds until next 3m candle close
+            import time
+            now_ts = int(time.time())
+            seconds_to_next_candle = 180 - (now_ts % 180)
+            
+            if seconds_to_next_candle > 10:
+                await asyncio.sleep(10) # Far from close, poll every 10s to keep UI updated
+            elif seconds_to_next_candle > 3:
+                await asyncio.sleep(2)  # Getting closer, poll every 2s
+            else:
+                await asyncio.sleep(0.5) # Right at the boundary, poll 2 times per second to catch it instantly!
+                
         except Exception as e:
             print(f"REST Polling error: {e}. Retrying in 5s...")
             await asyncio.sleep(5)
