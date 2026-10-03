@@ -34,3 +34,10 @@ class SystemLog(Base):
     level = Column(String) # INFO, WARNING, ERROR
     message = Column(String)
     timestamp = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+class Settings(Base):
+    __tablename__ = "settings"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    risk_pct = Column(Float, default=30.0)
+    leverage = Column(Integer, default=20)

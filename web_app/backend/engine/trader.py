@@ -54,9 +54,18 @@ class TradingEngine:
             sl_price = entry_price - (2.5 * atr if strategy == 'BTC_RR2' else 1.8 * atr)
             tp_price = entry_price + (target_rr * (entry_price - sl_price))
         
+        # Fetch Settings from DB
+        from models import Settings
+        from database import SessionLocal
+        db = SessionLocal()
+        settings = db.query(Settings).first()
+        db.close()
+        
+        current_risk_pct = risk_pct if risk_pct is not None else (settings.risk_pct if settings else 30.0)
+
         # Calculate size based on risk
         balance = await self.exchange.get_balance('USDT')
-        risk_amount = balance * (risk_pct / 100)
+        risk_amount = balance * (current_risk_pct / 100)
         risk_per_coin = abs(entry_price - sl_price)
         
         if risk_per_coin <= 0:

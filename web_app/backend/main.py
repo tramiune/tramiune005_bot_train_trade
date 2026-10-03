@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
-from models import Trade, SystemLog, BotConfig
+from models import Trade, SystemLog, BotConfig, Settings
 from engine.trader import TradingEngine
 from contextlib import asynccontextmanager
 from fetch_more import fetch_lots_of_klines
