@@ -23,8 +23,10 @@ function App() {
           </div>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-4">
+        <div className="space-y-6">
+          <ControlPanel />
+          
+          <div className="space-y-4">
             <div className="flex space-x-2">
               {['DOGEUSDT'].map((tab) => (
                 <button
@@ -41,11 +43,9 @@ function App() {
               ))}
             </div>
 
-            <ChartWidget symbol={activeTab} focusedTrade={focusedTrade} />
-          </div>
-
-          <div className="space-y-6">
-            <ControlPanel />
+            <div className="w-full">
+              <ChartWidget symbol={activeTab} focusedTrade={focusedTrade} />
+            </div>
           </div>
         </div>
 

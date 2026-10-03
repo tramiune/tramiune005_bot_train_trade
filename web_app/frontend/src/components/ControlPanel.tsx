@@ -131,7 +131,7 @@ const ControlPanel: React.FC = () => {
     };
 
     return (
-        <div className="flex flex-col space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             
             {/* Settings */}
             <div className="bg-[#1E222D] rounded-lg shadow-xl p-6 border border-gray-700">
@@ -248,28 +248,6 @@ const ControlPanel: React.FC = () => {
                         )}
                         {isCanceling ? 'Đang Hủy...' : 'Hủy Mọi Lệnh'}
                     </button>
-                </div>
-            </div>
-
-            {/* Strategy List */}
-            <div className="bg-[#1E222D] rounded-lg p-6 border border-gray-700 shadow-lg">
-                <h3 className="text-white font-bold mb-4">Active Strategies</h3>
-                <div className="space-y-3">
-                    
-                    <div className="flex justify-between items-center p-3 bg-gray-800 rounded border border-gray-700">
-                        <div>
-                            <div className="text-gray-300 font-semibold text-sm">SOL God Mode</div>
-                            <div className="text-gray-500 text-xs">1H • EMA20/200 • Tue-Thu</div>
-                        </div>
-                        <div className="text-green-400 font-mono text-sm">+15.0 RR</div>
-                    </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-800 rounded-lg border border-gray-700">
-                        <div>
-                            <div className="text-gray-300 font-semibold text-sm">BTC Trend Pullback</div>
-                            <div className="text-gray-500 text-xs">1H • EMA200 • NY Session</div>
-                        </div>
-                        <div className="text-green-400 font-mono text-sm">+2.0 RR</div>
-                    </div>
                 </div>
             </div>
 
