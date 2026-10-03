@@ -59,6 +59,14 @@ async def stop_bot():
         engine_instance.stop()
     return {"status": "STOPPED"}
 
+@app.get("/api/telegram/status")
+def get_telegram_status():
+    import os
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    ready = bool(token and chat_id and chat_id != "<WILL_BE_UPDATED>")
+    return {"ready": ready}
+
 @app.get("/api/trades")
 def get_trades(db: Session = Depends(get_db)):
     return db.query(Trade).order_by(Trade.entry_time.desc()).all()
