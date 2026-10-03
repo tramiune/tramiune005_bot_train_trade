@@ -15,7 +15,8 @@ async def main():
     for trade in open_trades:
         # Fetch candles since trade entry time
         since = int(pd.to_datetime(trade.entry_time).timestamp() * 1000)
-        ohlcv = await exchange.fetch_ohlcv(trade.symbol, '1m', since=since, limit=1500)
+        # Fetch 3m candles to cover a longer period (1000 * 3m = 3000m = 50 hours)
+        ohlcv = await exchange.fetch_ohlcv(trade.symbol, '3m', since=since, limit=1000)
         if not ohlcv:
             continue
             

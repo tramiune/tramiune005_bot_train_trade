@@ -119,7 +119,7 @@ class TradingEngine:
             
             db = SessionLocal()
             last_trade = db.query(Trade).filter(Trade.strategy == "DOGE_3M_DEGEN").order_by(Trade.entry_time.desc()).first()
-            last_trade_time = pd.to_datetime(last_trade.entry_time) if last_trade else pd.Timestamp('2000-01-01')
+            last_trade_time = pd.to_datetime(last_trade.exit_time) if (last_trade and last_trade.exit_time) else (pd.to_datetime(last_trade.entry_time) if last_trade else pd.Timestamp('2000-01-01'))
             
             if last_trade and last_trade.status == "OPEN":
                 self.log("Auto-Sync skipped: A trade is currently OPEN.")
@@ -175,19 +175,17 @@ class TradingEngine:
         try:
             # We just need the latest candles to check if TP/SL was hit.
             # For simplicity, we just fetch recent 1m candles for each symbol.
-            symbols = list(set([t.symbol for t in open_trades]))
-            prices = {}
-            for sym in symbols:
-                ohlcv = await self.exchange.fetch_ohlcv(sym, '1m', limit=10)
-                if ohlcv:
-                    prices[sym] = ohlcv
-                    
             for trade in open_trades:
-                if trade.symbol not in prices:
+                # Fetch 3m candles since entry to ensure we don't miss a spike while offline
+                import pandas as pd
+                since = int(pd.to_datetime(trade.entry_time).timestamp() * 1000)
+                # Fetch up to 1500 3m candles (approx 3 days)
+                ohlcv = await self.exchange.fetch_ohlcv(trade.symbol, '3m', since=since, limit=1500)
+                if not ohlcv:
                     continue
                 
-                # Check recent candles
-                for candle in prices[trade.symbol]:
+                # Check candles
+                for candle in ohlcv:
                     c_time, c_open, c_high, c_low, c_close, c_vol = candle
                     
                     if trade.side == 'LONG':
@@ -195,14 +193,14 @@ class TradingEngine:
                             trade.status = "CLOSED"
                             trade.exit_price = trade.stop_loss
                             trade.pnl = -1
-                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
                             self.log(f"Trade {trade.id} hit SL!")
                             break
                         elif c_high >= trade.take_profit:
                             trade.status = "CLOSED"
                             trade.exit_price = trade.take_profit
                             trade.pnl = 1
-                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
                             self.log(f"Trade {trade.id} hit TP!")
                             break
                     else:
@@ -210,14 +208,14 @@ class TradingEngine:
                             trade.status = "CLOSED"
                             trade.exit_price = trade.stop_loss
                             trade.pnl = -1
-                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
                             self.log(f"Trade {trade.id} hit SL!")
                             break
                         elif c_low <= trade.take_profit:
                             trade.status = "CLOSED"
                             trade.exit_price = trade.take_profit
                             trade.pnl = 1
-                            trade.exit_time = pd.to_datetime(c_time, unit='ms').to_pydatetime()
+                            trade.exit_time = pd.to_datetime(c_time, unit='ms').tz_localize('UTC').tz_convert('Asia/Ho_Chi_Minh').tz_localize(None).to_pydatetime()
                             self.log(f"Trade {trade.id} hit TP!")
                             break
             
