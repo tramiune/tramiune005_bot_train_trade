@@ -247,6 +247,19 @@ def get_klines(symbol: str, interval: str, limit: int = 1000, endTime: int = Non
         # Data is sorted ascending
         target = endTime / 1000
         
+        # Older than what the in-memory cache holds -> read from SQLite (table name derived from a
+        # cache key that already exists, so it cannot be injected through query params)
+        if data and target <= data[0]['time']:
+            from sqlalchemy import text
+            table_name = f"klines_{symbol.lower()}_{interval}"
+            with engine.connect() as conn:
+                rows = conn.execute(
+                    text(f"SELECT time, open, high, low, close, volume FROM {table_name} WHERE time <= :t ORDER BY time DESC LIMIT :n"),
+                    {"t": target, "n": limit}
+                ).fetchall()
+            older = [{"time": int(r[0]), "open": r[1], "high": r[2], "low": r[3], "close": r[4], "volume": r[5]} for r in reversed(rows)]
+            return {"status": "success", "data": older}
+        
         # Binary search for performance
         import bisect
         keys = [d['time'] for d in data]

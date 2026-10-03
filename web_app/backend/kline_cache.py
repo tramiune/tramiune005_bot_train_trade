@@ -9,6 +9,19 @@ from sqlalchemy import text
 # In-memory cache for fast UI loading
 KLINES_CACHE = {}
 
+def upsert_candles(table_name: str, rows: list):
+    """Insert-or-replace candles keyed by `time` (unique), so a candle is never stored twice
+    and the final (closed) values always overwrite any earlier partial snapshot."""
+    if not rows:
+        return
+    with engine.begin() as conn:
+        conn.execute(text(f"CREATE UNIQUE INDEX IF NOT EXISTS uq_{table_name}_time ON {table_name} (time)"))
+        conn.execute(
+            text(f"INSERT OR REPLACE INTO {table_name} (time, open, high, low, close, volume) "
+                 f"VALUES (:time, :open, :high, :low, :close, :volume)"),
+            [{k: r[k] for k in ('time', 'open', 'high', 'low', 'close', 'volume')} for r in rows]
+        )
+
 async def prefetch_klines():
     symbol = "DOGEUSDT"
     interval = "3m"
@@ -26,7 +39,7 @@ async def prefetch_klines():
         if table_exists:
             print(f"Loading {cache_key} from SQLite Database...")
             df = pd.read_sql(f"SELECT * FROM {table_name} ORDER BY time DESC LIMIT 2000", con=engine)
-            df = df.sort_values('time')
+            df = df.drop_duplicates(subset=['time'], keep='last').sort_values('time')
             last_time = int(df['time'].iloc[-1]) * 1000
             print(f"Loaded {len(df)} candles. Last time: {pd.to_datetime(last_time, unit='ms')}")
         else:
@@ -63,12 +76,14 @@ async def prefetch_klines():
                 new_df = pd.DataFrame(new_candles, columns=['time', 'open', 'high', 'low', 'close', 'volume'])
                 new_df['time'] = (new_df['time'] / 1000).astype(int)
                 
-                # Append to DB directly
-                new_df.to_sql(table_name, con=engine, if_exists='append', index=False)
+                # Persist ONLY candles that have fully closed. The candle still in progress
+                # must stay in memory only, otherwise a half-finished (wrong) close gets stored.
+                closed_df = new_df[(new_df['time'] * 1000 + interval_ms) <= now]
+                upsert_candles(table_name, closed_df.to_dict(orient='records'))
                 
-                # Combine in memory
+                # Combine in memory (includes the in-progress candle)
                 df = pd.concat([df, new_df]).drop_duplicates(subset=['time'], keep='last').sort_values('time')
-                print(f"Synced {len(new_df)} new candles to Database!")
+                print(f"Synced {len(closed_df)} closed candles to Database! (+{len(new_df) - len(closed_df)} in-progress kept in memory only)")
 
         # 3. Load to Memory
         KLINES_CACHE[cache_key] = df.tail(2000).to_dict(orient='records')

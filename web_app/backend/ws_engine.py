@@ -1,11 +1,31 @@
 import asyncio
 import pandas as pd
 from database import engine
-from kline_cache import KLINES_CACHE
+from kline_cache import KLINES_CACHE, upsert_candles
 from engine.trader import TradingEngine
 import time
 
 trader_instance = TradingEngine()
+
+async def verify_futures_source():
+    """Prove the engine's candle feed is Binance USD-M FUTURES: compare the closed candles returned by
+    the engine's own fetch path against the raw fapi.binance.com endpoint. Alert on Telegram if they differ."""
+    import httpx
+    from engine.telegram import send_telegram_message
+    try:
+        mine = await trader_instance.exchange.fetch_ohlcv("DOGE/USDT", "3m", limit=4)
+        async with httpx.AsyncClient(timeout=10) as client:
+            fut = (await client.get("https://fapi.binance.com/fapi/v1/klines",
+                                    params={"symbol": "DOGEUSDT", "interval": "3m", "limit": 4})).json()
+        truth = {k[0]: [float(x) for x in k[1:5]] for k in fut}
+        closed = [(k[0], [float(x) for x in k[1:5]]) for k in mine[:-1]]  # drop the in-progress candle
+        if closed and all(truth.get(t) == v for t, v in closed):
+            print("DATA SOURCE VERIFIED: candle feed matches Binance USD-M FUTURES (fapi).")
+        else:
+            print("DATA SOURCE MISMATCH: candle feed does NOT match Binance Futures!")
+            await send_telegram_message("⚠️ <b>CẢNH BÁO</b>: dữ liệu nến của bot KHÔNG khớp Binance Futures. Cần kiểm tra ngay!")
+    except Exception as e:
+        print(f"Futures source self-check could not run: {e}")
 
 async def binance_ws_loop():
     symbol = "DOGE/USDT"
@@ -14,6 +34,7 @@ async def binance_ws_loop():
     table_name = "klines_dogeusdt_3m"
     
     print("Starting Binance REST Polling (Fallback for WS)...")
+    await verify_futures_source()
     
     while True:
         try:
@@ -64,8 +85,7 @@ async def binance_ws_loop():
                     print(f"Candle Closed at {closed_candle['time']}! Saving to DB and triggering Engine...")
                     sys.stdout.flush()
                     
-                    df = pd.DataFrame([closed_candle])
-                    df.to_sql(table_name, con=engine, if_exists='append', index=False)
+                    upsert_candles(table_name, [closed_candle])
                     
                     await trader_instance.on_candle_closed()
             
