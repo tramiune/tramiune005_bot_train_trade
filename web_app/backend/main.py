@@ -16,20 +16,21 @@ from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-engine_instance = TradingEngine()
+from ws_engine import trader_instance, binance_ws_loop
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     import asyncio
-    engine_instance.is_running = True
-    asyncio.create_task(engine_instance.run_loop())
     # Start prefetching in background
-    asyncio.create_task(prefetch_klines())
+    await prefetch_klines() # block until cache is loaded
+    
+    asyncio.create_task(trader_instance.start())
+    asyncio.create_task(binance_ws_loop())
     
     yield
-    engine_instance.stop()
-    await engine_instance.exchange.close()
+    trader_instance.stop()
+    await trader_instance.exchange.close()
 
 app = FastAPI(lifespan=lifespan)
 
@@ -43,20 +44,19 @@ app.add_middleware(
 
 @app.get("/api/status")
 def get_status():
-    return {"status": "RUNNING" if engine_instance.is_running else "STOPPED"}
+    return {"status": "RUNNING" if trader_instance.is_running else "STOPPED"}
 
 @app.post("/api/start")
 async def start_bot():
-    if not engine_instance.is_running:
-        import asyncio
-        engine_instance.is_running = True
-        asyncio.create_task(engine_instance.run_loop())
+    if not trader_instance.is_running:
+        trader_instance.is_running = True
+        trader_instance.log("Trading Engine set to ACTIVE (Will execute new trades).")
     return {"status": "RUNNING"}
 
 @app.post("/api/stop")
 async def stop_bot():
-    if engine_instance.is_running:
-        engine_instance.stop()
+    if trader_instance.is_running:
+        trader_instance.stop()
     return {"status": "STOPPED"}
 
 @app.post("/api/test_order")
@@ -147,7 +147,7 @@ async def run_backtest(symbol: str, db: Session = Depends(get_db)):
     if not trades:
         logging.info(f"No historical trades found for {symbol} in DB. Lazy loading 35,000 candles from Binance...")
         try:
-            data = await fetch_lots_of_klines(engine_instance.exchange.exchange, symbol, '1h', 35000)
+            data = await fetch_lots_of_klines(trader_instance.exchange.exchange, symbol, '1h', 35000)
             df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
             
             backtest_results = []
@@ -158,7 +158,7 @@ async def run_backtest(symbol: str, db: Session = Depends(get_db)):
                 strategy_name = "DOGE_RR25"
             elif symbol == "SOL/USDT":
                 from engine.backtester import backtest_sol_god_mode
-                btc_data = await fetch_lots_of_klines(engine_instance.exchange.exchange, "BTC/USDT", '1h', 35000)
+                btc_data = await fetch_lots_of_klines(trader_instance.exchange.exchange, "BTC/USDT", '1h', 35000)
                 btc_df = pd.DataFrame(btc_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 backtest_results = backtest_sol_god_mode(df, btc_df)
                 strategy_name = "SOL_GOD_MODE"

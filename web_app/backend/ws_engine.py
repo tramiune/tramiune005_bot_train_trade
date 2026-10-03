@@ -4,10 +4,10 @@ import websockets
 import pandas as pd
 from database import engine
 from kline_cache import KLINES_CACHE
-from engine.trader import Trader
+from engine.trader import TradingEngine
 import time
 
-trader_instance = Trader()
+trader_instance = TradingEngine()
 
 async def binance_ws_loop():
     symbol = "dogeusdt"
