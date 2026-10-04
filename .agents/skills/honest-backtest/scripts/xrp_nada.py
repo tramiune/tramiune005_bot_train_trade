@@ -47,21 +47,28 @@ def pine_rsi(src, n):
     return out
 
 
-def signals(B):
+def signals(B, h=H_BW, mult=MULT, rsi_os=RSI_OS, rsi_ob=RSI_OB, vol_mult=VOL_MULT, _cache={}):
+    """vol_mult=None disables the volume filter. RSI is cached per bar set (it is the slow part)."""
     c = B["close"].to_numpy()
-    w = np.exp(-(np.arange(500) ** 2) / (H_BW * H_BW * 2))
+    w = np.exp(-(np.arange(500) ** 2) / (h * h * 2))
     out = np.convolve(c, w)[: len(c)] / w.sum()
     out[:499] = np.nan                                   # Pine: src[i] is na for the first 499 bars
-    mae = pd.Series(np.abs(c - out)).rolling(499).mean().to_numpy() * MULT
+    mae = pd.Series(np.abs(c - out)).rolling(499).mean().to_numpy() * mult
     upper, lower = out + mae, out - mae
-    r = pine_rsi(c, RSI_LEN)
+    key = (len(c), float(c[0]), float(c[-1]))
+    if key not in _cache:
+        _cache[key] = pine_rsi(c, RSI_LEN)
+    r = _cache[key]
     v = B["volume"].to_numpy()
-    high_vol = v > pd.Series(v).rolling(20).mean().to_numpy() * VOL_MULT
+    if vol_mult is None:
+        high_vol = np.zeros(len(c), dtype=bool)
+    else:
+        high_vol = v > pd.Series(v).rolling(20).mean().to_numpy() * vol_mult
     prev_c, prev_l, prev_u = np.roll(c, 1), np.roll(lower, 1), np.roll(upper, 1)
     cross_dn = (c < lower) & (prev_c >= prev_l)
     cross_up = (c > upper) & (prev_c <= prev_u)
-    buy = cross_dn & (r < RSI_OS) & ~high_vol
-    sell = cross_up & (r > RSI_OB) & ~high_vol
+    buy = cross_dn & (r < rsi_os) & ~high_vol
+    sell = cross_up & (r > rsi_ob) & ~high_vol
     side = np.where(buy, 1, np.where(sell, -1, 0))
     side[:1000] = 0
     return side

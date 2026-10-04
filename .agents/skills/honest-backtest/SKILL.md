@@ -62,6 +62,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | Mean-reversion scalping 5m/15m (BB limit, BB market, RSI2 limit), 288 configs | **0/288 profitable out-of-sample**; even before costs best OOS gross EV ≈ +0.01%/trade. Limit entries at the band are adversely selected. Highest win rate (RSI2, ~62%) still loses |
 | XRP 5m "Nada + RSI + Volume" (user's TradingView script, h=8, mult=3, RSI 20/80, vol<2x) | Only **73 signals in 4 years** (~1.5/month). Original (reverse, no TP/SL): 34 trades, IS −22% / OOS +112%, unstable. TP/SL grid: tiny TP + huge SL wins ~100% but the worst adverse move before TP was −9% (TP0.5%) / −15% (TP1%), so the tail decides; 72 trades with 0 losses cannot prove a loss rate below the 3.4% break-even. Steadiest zone TP 0.75–1% / SL 2–3%: ~+0.2%/trade, ~16–17% total over 4 years at 1x, CI touches 0 |
 | Same XRP signals, **high R:R** (TP = RR x SL), 42 cells | Much better: zone **SL 0.75–1.5%, RR 8–15** positive IS and OOS. SL1%/RR10: 68 trades, 16 TP (23.5% vs 10.4% break-even), +95% at 1x, beats 100% of random entries, still +65% without the 3 best trades; 2022 0/6, 2025 dominates. Very tight SL (0.3%) ~flat. Only ~16 wins: wide uncertainty |
+| Loosening the XRP signal (h 6/8/10, mult 2/2.5/3, RSI 20/80–30/70, vol 2/3/off) x 9 high-R:R exits = 729 runs | Loosening **hurts**: RSI 25/75 or 30/70 and removing the volume filter give 5–30x more trades but lose in-sample. The original (h8, mult3, RSI 20/80, vol<2x) is the best IS setting and 9/9 exits positive in both periods; close neighbours (h6/h10, vol<3x) stay positive. Only 6/81 settings positive in both periods |
 
 ## Tools
 
@@ -73,6 +74,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
   (`SYMBOL=SOLUSDT` env to switch coin after downloading it).
 - [xrp_nada.py](./scripts/xrp_nada.py): 1:1 port of the user's TradingView XRP NW+RSI+Volume script, TP/SL grid, bootstrap CI, random baseline.
 - [xrp_nada_rr.py](./scripts/xrp_nada_rr.py): high R:R grid for the same signals, leave-best-trades-out check.
+- [xrp_nada_loosen.py](./scripts/xrp_nada_loosen.py): signal-parameter loosening study (IS-only selection).
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
