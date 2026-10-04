@@ -46,13 +46,29 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
   profit factor, trades/month, and how robust neighbouring parameters are.
 - **Self-check the harness** against a known result first (DOGE_3M_DEGEN 5/15 → ~374 closed
   trades, ~75.7% win).
+- **Limit orders may not fill.** Use `Sim.run_limit`: entry only when price trades *through* the
+  limit within the validity window; TP-in-fill-candle not allowed; maker fee on limit legs, taker +
+  slippage on SL/time-stop. Report how many orders went unfilled. The live 19:45 order did not fill.
+- **Check the edge before costs too** (gross EV). If gross EV is ~0, no fee level will save it.
 - Never change the live bot, its TP/SL, or rows in the `trades` table without the user's OK.
   Back up `trading_bot.db` before any DB write.
+
+## Results so far (DOGEUSDT futures, 2022-09 → 2026-10)
+
+| Test | Result |
+|---|---|
+| DOGE_3M_DEGEN 5/15 (live) | 374 trades, 75.7% win, **−42% after real costs** |
+| 648 classic combos (Donchian/EMA/RSI/BB/squeeze, 15m/1h/4h) | 15m: none survive costs. Best robust: **4h Donchian100** (12/12 exit settings positive IS and OOS, beats random 79–99%), but only ~2.7 trades/month and 2023 −42% |
+| Mean-reversion scalping 5m/15m (BB limit, BB market, RSI2 limit), 288 configs | **0/288 profitable out-of-sample**; even before costs best OOS gross EV ≈ +0.01%/trade. Limit entries at the band are adversely selected. Highest win rate (RSI2, ~62%) still loses |
 
 ## Tools
 
 - [bt_harness.py](./scripts/bt_harness.py): data loading/resampling, indicators, `Sim.run`
   (enforces all rules above), `check_trades`, `metrics`, `per_year`.
+- [bt_data.py](./scripts/bt_data.py): download official Binance USD-M futures klines (any symbol /
+  interval) from data.binance.vision with SHA256 check into `data/futures_um/` (local machine).
+- [mr_search.py](./scripts/mr_search.py): mean-reversion scalping grid on 1m data, multiprocessing
+  (`SYMBOL=SOLUSDT` env to switch coin after downloading it).
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
