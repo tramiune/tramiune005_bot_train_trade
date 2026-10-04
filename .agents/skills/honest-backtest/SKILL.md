@@ -70,6 +70,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | DOGE deep dive: 4h star after prior counter-move (default params) | RR1: 117 trades, 60.7% win, +0.145R/trade (90% CI −0.006…+0.29), IS +10.8R / OOS +6.1R, every year positive, long and short both positive, beats 100% of random entries; RR1.5 similar (+0.16R), RR2 ≈ 0. Neighbourhood: 23/24 positive IS, 14/24 both; look-back 5 bars weaker. 1% risk/trade: +18% in 4 y, maxDD 5%. **Combined with 4h Donchian100** (monthly corr −0.17): 251 trades, +50.8R, 1% risk each → +63%, maxDD 11%, only 2023 negative |
 | Nadaraya-Watson 5m **scalping** (non-repainting NW; band re-entry, + RSI 30/70, NW slope flip; 2h time-stop), 5 coins, 21 configs each | **0/105** coin-configs positive in either period. Gross EV ≈ 0.000–0.01%/trade everywhere, net ≈ −0.14% (= costs). 80–500 trades/coin/month. No edge to protect, so fees decide. Warn users: the popular LuxAlgo NW envelope repaints by default |
 | "Learn from losing trades" filters on the NW 5m scalp (9 causal features, additive bin score, keep top 10–30%), 5 coins, 2024-01 → 2026-10 | **Walk-forward (learn only from finished past trades, refit quarterly): no improvement** (net/trade −0.09…−0.16% vs −0.11…−0.14% unfiltered). Even the in-sample "cheating" filter stays negative (−0.01…−0.08%/trade). Filtering cannot create an edge that is not there; loss-analysis filters must always be validated walk-forward |
+| DOGE 3m squeeze at TP=SL=5% (contra or follow ≈ 50% win, −146…−156% after costs) + direction rules (HTF EMA trends, momentum, Donchian position, BTC trend) | Per-signal hit rates 52–56% look promising but are inflated by clustered signals; in one-position trading **every rule loses in-sample (<2025)**, some win only in 2025–26 (1d EMA20: IS −59%, OOS +112%). Direction tilt is regime-dependent, not robust. Lesson: count independent trades, not clustered signals |
 
 ## Tools
 
@@ -88,6 +89,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [doge_star_deep.py](./scripts/doge_star_deep.py): DOGE 4h star deep dive (per year, random, neighbourhood, risk sizing, Donchian combo).
 - [nada_scalp.py](./scripts/nada_scalp.py): NW 5m scalping families on 5 coins.
 - [loss_filter_wf.py](./scripts/loss_filter_wf.py): walk-forward vs in-sample loss-learning filters (template for any strategy).
+- [squeeze_direction.py](./scripts/squeeze_direction.py): direction rules for the DOGE squeeze at 1:1.
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
