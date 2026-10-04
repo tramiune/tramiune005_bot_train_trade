@@ -67,6 +67,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | 4h Donchian 55/100 breakout, SL 1.5–2 ATR, R:R 2–3, same params on 5 coins | Generalises to **altcoins** (DOGE, XRP, SOL positive), **not ETH/BTC**. Pooled 5 coins: positive in 7/8 settings, win ~38–40% at RR 2, ~0.2–0.5%/trade, ~3 trades/month/coin. Best simple candidate so far |
 | Pure candlestick price action (engulfing, pin bar, inside bar, ± at 20-bar extreme), 1h/4h, 5 coins, RR 0.5–2 (240 combos) | Win rate ≈ break-even 1/(1+RR) everywhere (RR1 ≈ 49–53%, RR2 ≈ 32–36%) → candles alone ≈ random; after costs almost all lose. **0** coin-level combos with win ≥ 70% at RR ≥ 1. Best: 4h engulfing at 20-bar extreme RR1 ≈ +0.02%/trade (flat) |
 | Bulkowski top multi-candle patterns (three line strike, crows/soldiers, morning/evening star, ± prior-trend), 1h/4h/1d, 5 coins (270 cells) | "Breakout first" rate reproduces the famous 74–93% (three line strike ~81%) **but it is an artefact**: the boundary in the predicted direction sits next to the close, the other far away. Trade win rates ≈ break-even; 0 cells with win ≥ 70% at RR ≥ 1. Only 4h morning/evening star after a prior move is positive in IS and OOS at RR 1–2 (RR1: 546 trades, 56.8% win, +0.28%/trade), driven by DOGE/XRP; BTC/ETH negative. 1d crows/soldiers: too few trades (9–25) |
+| DOGE deep dive: 4h star after prior counter-move (default params) | RR1: 117 trades, 60.7% win, +0.145R/trade (90% CI −0.006…+0.29), IS +10.8R / OOS +6.1R, every year positive, long and short both positive, beats 100% of random entries; RR1.5 similar (+0.16R), RR2 ≈ 0. Neighbourhood: 23/24 positive IS, 14/24 both; look-back 5 bars weaker. 1% risk/trade: +18% in 4 y, maxDD 5%. **Combined with 4h Donchian100** (monthly corr −0.17): 251 trades, +50.8R, 1% risk each → +63%, maxDD 11%, only 2023 negative |
 
 ## Tools
 
@@ -82,6 +83,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [nada_cross_coin.py](./scripts/nada_cross_coin.py), [donchian_cross_coin.py](./scripts/donchian_cross_coin.py): same parameters on 5 coins (best anti-overfit check).
 - [price_action.py](./scripts/price_action.py): candlestick patterns on 5 coins.
 - [candle_clusters.py](./scripts/candle_clusters.py): Bulkowski multi-candle patterns, breakout-rate vs trade win-rate.
+- [doge_star_deep.py](./scripts/doge_star_deep.py): DOGE 4h star deep dive (per year, random, neighbourhood, risk sizing, Donchian combo).
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
