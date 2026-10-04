@@ -2,7 +2,7 @@
 name: honest-backtest
 description: >-
   Use this skill whenever backtesting, comparing, tuning TP/SL, or reporting statistics (win rate,
-  profit, number of trades) for any trading strategy in this repo (DOGEUSDT / Binance USD-M Futures).
+  profit, number of trades) for any trading strategy in this repo (Binance USD-M Futures: DOGE, XRP, SOL, ETH, BTC).
   It lists the rules a backtest must follow and the mistakes already made here, and provides a
   reusable harness that enforces them.
 ---
@@ -63,6 +63,8 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | XRP 5m "Nada + RSI + Volume" (user's TradingView script, h=8, mult=3, RSI 20/80, vol<2x) | Only **73 signals in 4 years** (~1.5/month). Original (reverse, no TP/SL): 34 trades, IS −22% / OOS +112%, unstable. TP/SL grid: tiny TP + huge SL wins ~100% but the worst adverse move before TP was −9% (TP0.5%) / −15% (TP1%), so the tail decides; 72 trades with 0 losses cannot prove a loss rate below the 3.4% break-even. Steadiest zone TP 0.75–1% / SL 2–3%: ~+0.2%/trade, ~16–17% total over 4 years at 1x, CI touches 0 |
 | Same XRP signals, **high R:R** (TP = RR x SL), 42 cells | Much better: zone **SL 0.75–1.5%, RR 8–15** positive IS and OOS. SL1%/RR10: 68 trades, 16 TP (23.5% vs 10.4% break-even), +95% at 1x, beats 100% of random entries, still +65% without the 3 best trades; 2022 0/6, 2025 dominates. Very tight SL (0.3%) ~flat. Only ~16 wins: wide uncertainty |
 | Loosening the XRP signal (h 6/8/10, mult 2/2.5/3, RSI 20/80–30/70, vol 2/3/off) x 9 high-R:R exits = 729 runs | Loosening **hurts**: RSI 25/75 or 30/70 and removing the volume filter give 5–30x more trades but lose in-sample. The original (h8, mult3, RSI 20/80, vol<2x) is the best IS setting and 9/9 exits positive in both periods; close neighbours (h6/h10, vol<3x) stay positive. Only 6/81 settings positive in both periods |
+| XRP NW+RSI+Volume signal, original params, on XRP/DOGE/SOL/ETH/BTC, R:R 2–3 | **Does not generalise**: only XRP positive (12/12 exits); DOGE, SOL, ETH lose in all exits, BTC ~flat. Pooled: negative in 11/12 exits. The XRP edge is likely coin/period specific (overfit risk) |
+| 4h Donchian 55/100 breakout, SL 1.5–2 ATR, R:R 2–3, same params on 5 coins | Generalises to **altcoins** (DOGE, XRP, SOL positive), **not ETH/BTC**. Pooled 5 coins: positive in 7/8 settings, win ~38–40% at RR 2, ~0.2–0.5%/trade, ~3 trades/month/coin. Best simple candidate so far |
 
 ## Tools
 
@@ -75,6 +77,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [xrp_nada.py](./scripts/xrp_nada.py): 1:1 port of the user's TradingView XRP NW+RSI+Volume script, TP/SL grid, bootstrap CI, random baseline.
 - [xrp_nada_rr.py](./scripts/xrp_nada_rr.py): high R:R grid for the same signals, leave-best-trades-out check.
 - [xrp_nada_loosen.py](./scripts/xrp_nada_loosen.py): signal-parameter loosening study (IS-only selection).
+- [nada_cross_coin.py](./scripts/nada_cross_coin.py), [donchian_cross_coin.py](./scripts/donchian_cross_coin.py): same parameters on 5 coins (best anti-overfit check).
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
