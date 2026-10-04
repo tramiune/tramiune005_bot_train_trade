@@ -65,6 +65,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | Loosening the XRP signal (h 6/8/10, mult 2/2.5/3, RSI 20/80–30/70, vol 2/3/off) x 9 high-R:R exits = 729 runs | Loosening **hurts**: RSI 25/75 or 30/70 and removing the volume filter give 5–30x more trades but lose in-sample. The original (h8, mult3, RSI 20/80, vol<2x) is the best IS setting and 9/9 exits positive in both periods; close neighbours (h6/h10, vol<3x) stay positive. Only 6/81 settings positive in both periods |
 | XRP NW+RSI+Volume signal, original params, on XRP/DOGE/SOL/ETH/BTC, R:R 2–3 | **Does not generalise**: only XRP positive (12/12 exits); DOGE, SOL, ETH lose in all exits, BTC ~flat. Pooled: negative in 11/12 exits. The XRP edge is likely coin/period specific (overfit risk) |
 | 4h Donchian 55/100 breakout, SL 1.5–2 ATR, R:R 2–3, same params on 5 coins | Generalises to **altcoins** (DOGE, XRP, SOL positive), **not ETH/BTC**. Pooled 5 coins: positive in 7/8 settings, win ~38–40% at RR 2, ~0.2–0.5%/trade, ~3 trades/month/coin. Best simple candidate so far |
+| Pure candlestick price action (engulfing, pin bar, inside bar, ± at 20-bar extreme), 1h/4h, 5 coins, RR 0.5–2 (240 combos) | Win rate ≈ break-even 1/(1+RR) everywhere (RR1 ≈ 49–53%, RR2 ≈ 32–36%) → candles alone ≈ random; after costs almost all lose. **0** coin-level combos with win ≥ 70% at RR ≥ 1. Best: 4h engulfing at 20-bar extreme RR1 ≈ +0.02%/trade (flat) |
 
 ## Tools
 
@@ -78,6 +79,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [xrp_nada_rr.py](./scripts/xrp_nada_rr.py): high R:R grid for the same signals, leave-best-trades-out check.
 - [xrp_nada_loosen.py](./scripts/xrp_nada_loosen.py): signal-parameter loosening study (IS-only selection).
 - [nada_cross_coin.py](./scripts/nada_cross_coin.py), [donchian_cross_coin.py](./scripts/donchian_cross_coin.py): same parameters on 5 coins (best anti-overfit check).
+- [price_action.py](./scripts/price_action.py): candlestick patterns on 5 coins.
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
