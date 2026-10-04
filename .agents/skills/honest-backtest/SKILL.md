@@ -71,6 +71,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | Nadaraya-Watson 5m **scalping** (non-repainting NW; band re-entry, + RSI 30/70, NW slope flip; 2h time-stop), 5 coins, 21 configs each | **0/105** coin-configs positive in either period. Gross EV ≈ 0.000–0.01%/trade everywhere, net ≈ −0.14% (= costs). 80–500 trades/coin/month. No edge to protect, so fees decide. Warn users: the popular LuxAlgo NW envelope repaints by default |
 | "Learn from losing trades" filters on the NW 5m scalp (9 causal features, additive bin score, keep top 10–30%), 5 coins, 2024-01 → 2026-10 | **Walk-forward (learn only from finished past trades, refit quarterly): no improvement** (net/trade −0.09…−0.16% vs −0.11…−0.14% unfiltered). Even the in-sample "cheating" filter stays negative (−0.01…−0.08%/trade). Filtering cannot create an edge that is not there; loss-analysis filters must always be validated walk-forward |
 | DOGE 3m squeeze at TP=SL=5% (contra or follow ≈ 50% win, −146…−156% after costs) + direction rules (HTF EMA trends, momentum, Donchian position, BTC trend) | Per-signal hit rates 52–56% look promising but are inflated by clustered signals; in one-position trading **every rule loses in-sample (<2025)**, some win only in 2025–26 (1d EMA20: IS −59%, OOS +112%). Direction tilt is regime-dependent, not robust. Lesson: count independent trades, not clustered signals |
+| Hour-of-day filter on DOGE 3m squeeze (live 5/15, contra 5/5, follow 5/5, 1d-EMA20 dir 5/5) | Hourly results do **not repeat**: correlation IS vs OOS −0.12…+0.13. Walk-forward hour selection improved 1 of 4 variants (contra 5/5: −0.21% → ≈0%/trade) and hurt or did nothing for the other 3 → consistent with noise. No session (Asia/Europe/US/late) is consistently good across variants. Do not use hour filters without walk-forward proof |
 
 ## Tools
 
@@ -90,6 +91,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [nada_scalp.py](./scripts/nada_scalp.py): NW 5m scalping families on 5 coins.
 - [loss_filter_wf.py](./scripts/loss_filter_wf.py): walk-forward vs in-sample loss-learning filters (template for any strategy).
 - [squeeze_direction.py](./scripts/squeeze_direction.py): direction rules for the DOGE squeeze at 1:1.
+- [hour_filter.py](./scripts/hour_filter.py): hour/session filter study with walk-forward.
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
