@@ -260,52 +260,69 @@ def backtest_doge_3m_degen(df):
     trades = []
     tp_pct = 5.0
     sl_pct = 15.0
-    
-    i = 200
-    while i < len(df) - 1:
-        was_squeezed = df['squeeze_duration'].iloc[i-1] >= 5
-        fires_now = df['squeeze_off'].iloc[i] and df['squeeze_on'].iloc[i-1]
-        high_vol = df['volume'].iloc[i] > (1.5 * df['vol_ma'].iloc[i])
-        
-        if was_squeezed and fires_now and high_vol:
-            is_bullish_breakout = df['close'].iloc[i] > df['bb_mid'].iloc[i]
-            side = 'SHORT' if is_bullish_breakout else 'LONG'
-            entry = df['close'].iloc[i]
-            
-            if side == 'LONG':
-                sl_price = entry * (1 - sl_pct/100)
-                tp_price = entry * (1 + tp_pct/100)
-            else:
-                sl_price = entry * (1 + sl_pct/100)
-                tp_price = entry * (1 - tp_pct/100)
-                
-            exit_idx = i
-            exit_price = 0
-            is_win = False
-            for j in range(i+1, min(i+1440, len(df))):
-                if side == 'LONG':
-                    if df['low'].iloc[j] <= sl_price:
-                        is_win = False; exit_idx = j; exit_price = sl_price; break
-                    elif df['high'].iloc[j] >= tp_price:
-                        is_win = True; exit_idx = j; exit_price = tp_price; break
-                else:
-                    if df['high'].iloc[j] >= sl_price:
-                        is_win = False; exit_idx = j; exit_price = sl_price; break
-                    elif df['low'].iloc[j] <= tp_price:
-                        is_win = True; exit_idx = j; exit_price = tp_price; break
-            
-            if exit_idx > i:
-                trades.append({
-                    "side": side,
-                    "entry": float(entry),
-                    "exit_price": float(exit_price),
-                    "time": df['timestamp'].iloc[i] / 1000 if df['timestamp'].iloc[i] > 2000000000 else df['timestamp'].iloc[i],
-                    "exit_time": df['timestamp'].iloc[exit_idx] / 1000 if df['timestamp'].iloc[exit_idx] > 2000000000 else df['timestamp'].iloc[exit_idx],
-                    "tp": tp_price,
-                    "sl": sl_price,
-                    "pnl": 1 if is_win else -1
-                })
-                i = exit_idx
-                continue
-        i += 1
+
+    # Strictly one trade at a time, exactly like the live bot: while a trade is open every new
+    # signal is ignored. The horizon is NOT capped - a trade that never reaches TP/SL stays open
+    # forever and therefore blocks all later signals (no survivorship bias from dropping slow trades).
+    n = len(df)
+    high_arr = df['high'].to_numpy()
+    low_arr = df['low'].to_numpy()
+    close_arr = df['close'].to_numpy()
+    bb_mid_arr = df['bb_mid'].to_numpy()
+    ts_arr = df['timestamp'].to_numpy()
+
+    prev_squeezed = (df['squeeze_duration'].shift(1) >= 5).to_numpy()
+    fires = (df['squeeze_off'] & df['squeeze_on'].shift(1, fill_value=False).astype(bool)).to_numpy()
+    high_vol_arr = (df['volume'] > (1.5 * df['vol_ma'])).to_numpy()
+    signal_mask = prev_squeezed & fires & high_vol_arr
+    signal_mask[:200] = False
+    signal_mask[n - 1:] = False  # needs at least one following candle (same bound as before: i < len-1)
+
+    def _to_sec(v):
+        return v / 1000 if v > 2000000000 else v
+
+    free_idx = 0  # first candle index at which a new trade may be opened
+    for i in np.nonzero(signal_mask)[0]:
+        i = int(i)
+        if i < free_idx:
+            continue
+
+        is_bullish_breakout = close_arr[i] > bb_mid_arr[i]
+        side = 'SHORT' if is_bullish_breakout else 'LONG'
+        entry = close_arr[i]
+
+        if side == 'LONG':
+            sl_price = entry * (1 - sl_pct/100)
+            tp_price = entry * (1 + tp_pct/100)
+            sl_hits = np.nonzero(low_arr[i+1:] <= sl_price)[0]
+            tp_hits = np.nonzero(high_arr[i+1:] >= tp_price)[0]
+        else:
+            sl_price = entry * (1 + sl_pct/100)
+            tp_price = entry * (1 - tp_pct/100)
+            sl_hits = np.nonzero(high_arr[i+1:] >= sl_price)[0]
+            tp_hits = np.nonzero(low_arr[i+1:] <= tp_price)[0]
+
+        first_sl = int(sl_hits[0]) if len(sl_hits) else None
+        first_tp = int(tp_hits[0]) if len(tp_hits) else None
+
+        if first_sl is None and first_tp is None:
+            break  # still open at the end of the data -> blocks every later signal
+
+        # SL wins a same-candle double touch (conservative)
+        is_win = first_sl is None or (first_tp is not None and first_tp < first_sl)
+        k = first_tp if is_win else first_sl
+        exit_idx = i + 1 + k
+        exit_price = tp_price if is_win else sl_price
+
+        trades.append({
+            "side": side,
+            "entry": float(entry),
+            "exit_price": float(exit_price),
+            "time": _to_sec(ts_arr[i]),
+            "exit_time": _to_sec(ts_arr[exit_idx]),
+            "tp": tp_price,
+            "sl": sl_price,
+            "pnl": 1 if is_win else -1
+        })
+        free_idx = exit_idx
     return trades
