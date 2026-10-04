@@ -69,6 +69,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | Bulkowski top multi-candle patterns (three line strike, crows/soldiers, morning/evening star, ± prior-trend), 1h/4h/1d, 5 coins (270 cells) | "Breakout first" rate reproduces the famous 74–93% (three line strike ~81%) **but it is an artefact**: the boundary in the predicted direction sits next to the close, the other far away. Trade win rates ≈ break-even; 0 cells with win ≥ 70% at RR ≥ 1. Only 4h morning/evening star after a prior move is positive in IS and OOS at RR 1–2 (RR1: 546 trades, 56.8% win, +0.28%/trade), driven by DOGE/XRP; BTC/ETH negative. 1d crows/soldiers: too few trades (9–25) |
 | DOGE deep dive: 4h star after prior counter-move (default params) | RR1: 117 trades, 60.7% win, +0.145R/trade (90% CI −0.006…+0.29), IS +10.8R / OOS +6.1R, every year positive, long and short both positive, beats 100% of random entries; RR1.5 similar (+0.16R), RR2 ≈ 0. Neighbourhood: 23/24 positive IS, 14/24 both; look-back 5 bars weaker. 1% risk/trade: +18% in 4 y, maxDD 5%. **Combined with 4h Donchian100** (monthly corr −0.17): 251 trades, +50.8R, 1% risk each → +63%, maxDD 11%, only 2023 negative |
 | Nadaraya-Watson 5m **scalping** (non-repainting NW; band re-entry, + RSI 30/70, NW slope flip; 2h time-stop), 5 coins, 21 configs each | **0/105** coin-configs positive in either period. Gross EV ≈ 0.000–0.01%/trade everywhere, net ≈ −0.14% (= costs). 80–500 trades/coin/month. No edge to protect, so fees decide. Warn users: the popular LuxAlgo NW envelope repaints by default |
+| "Learn from losing trades" filters on the NW 5m scalp (9 causal features, additive bin score, keep top 10–30%), 5 coins, 2024-01 → 2026-10 | **Walk-forward (learn only from finished past trades, refit quarterly): no improvement** (net/trade −0.09…−0.16% vs −0.11…−0.14% unfiltered). Even the in-sample "cheating" filter stays negative (−0.01…−0.08%/trade). Filtering cannot create an edge that is not there; loss-analysis filters must always be validated walk-forward |
 
 ## Tools
 
@@ -86,6 +87,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [candle_clusters.py](./scripts/candle_clusters.py): Bulkowski multi-candle patterns, breakout-rate vs trade win-rate.
 - [doge_star_deep.py](./scripts/doge_star_deep.py): DOGE 4h star deep dive (per year, random, neighbourhood, risk sizing, Donchian combo).
 - [nada_scalp.py](./scripts/nada_scalp.py): NW 5m scalping families on 5 coins.
+- [loss_filter_wf.py](./scripts/loss_filter_wf.py): walk-forward vs in-sample loss-learning filters (template for any strategy).
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 

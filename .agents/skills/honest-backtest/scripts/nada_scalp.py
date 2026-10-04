@@ -85,31 +85,32 @@ def run(sim, B, D, fam, mult, ex):
     return T
 
 
-rows, store = [], {}
-for sym in COINS:
-    d1 = bt_data.load(sym, "1m")
-    sim = H.Sim(d1)
-    B = H.resample(d1, 5)
-    D = build(B)
-    for fam, mult, ex in configs():
-        T = run(sim, B, D, fam, mult, ex)
-        store[(sym, fam, mult, str(ex))] = T
-        rows.append({"coin": sym, "fam": fam, "mult": mult, "exit": str(ex), "n": len(T),
-                     "win%": (T.net > 0).mean() * 100 if len(T) else np.nan,
-                     "gross_ev": T.gross.mean() if len(T) else np.nan, "net_ev": T.net.mean() if len(T) else np.nan,
-                     "IS": T.loc[T.entry_t < H.SPLIT, "net"].sum(), "OOS": T.loc[T.entry_t >= H.SPLIT, "net"].sum(),
-                     "hold_min": T.hold_h.mean() * 60 if len(T) else np.nan,
-                     "time_exits%": (T.reason == "TIME").mean() * 100 if len(T) else np.nan})
-    print(f"done {sym}", flush=True)
-R = pd.DataFrame(rows)
-R.to_csv(os.path.join(bt_data.ROOT, "nada_scalp.csv"), index=False)
-print("\n== POOLED 5 coins (one position at a time per coin) ==")
-for (fam, mult, ex), g in R.groupby(["fam", "mult", "exit"], dropna=False, sort=False):
-    P = pd.concat([store[(s, fam, mult, ex)] for s in COINS])
-    r = P["net"].to_numpy()
-    print(f"{fam:10s} mult {str(mult):4s} exit {ex:10s}: trades {len(P):6d} ({len(P)/5/49:5.1f}/coin/mo) win {(r>0).mean()*100:5.1f}% "
-          f"gross {P.gross.mean():+.3f}% net {r.mean():+.3f}% | IS {P.loc[P.entry_t<H.SPLIT,'net'].sum():+7.0f}% "
-          f"OOS {P.loc[P.entry_t>=H.SPLIT,'net'].sum():+7.0f}% | coins+ {int((g.IS+g.OOS>0).sum())}/5 | hold {P.hold_h.mean()*60:.0f}m")
-best = R[(R.IS > 0)].sort_values("IS", ascending=False)
-print(f"\ncoin-level configs positive IS: {(R.IS>0).sum()} | OOS: {(R.OOS>0).sum()} | both: {((R.IS>0)&(R.OOS>0)).sum()} of {len(R)}")
-print(best.head(12).round(3).to_string(index=False))
+if __name__ == "__main__":
+    rows, store = [], {}
+    for sym in COINS:
+        d1 = bt_data.load(sym, "1m")
+        sim = H.Sim(d1)
+        B = H.resample(d1, 5)
+        D = build(B)
+        for fam, mult, ex in configs():
+            T = run(sim, B, D, fam, mult, ex)
+            store[(sym, fam, mult, str(ex))] = T
+            rows.append({"coin": sym, "fam": fam, "mult": mult, "exit": str(ex), "n": len(T),
+                         "win%": (T.net > 0).mean() * 100 if len(T) else np.nan,
+                         "gross_ev": T.gross.mean() if len(T) else np.nan, "net_ev": T.net.mean() if len(T) else np.nan,
+                         "IS": T.loc[T.entry_t < H.SPLIT, "net"].sum(), "OOS": T.loc[T.entry_t >= H.SPLIT, "net"].sum(),
+                         "hold_min": T.hold_h.mean() * 60 if len(T) else np.nan,
+                         "time_exits%": (T.reason == "TIME").mean() * 100 if len(T) else np.nan})
+        print(f"done {sym}", flush=True)
+    R = pd.DataFrame(rows)
+    R.to_csv(os.path.join(bt_data.ROOT, "nada_scalp.csv"), index=False)
+    print("\n== POOLED 5 coins (one position at a time per coin) ==")
+    for (fam, mult, ex), g in R.groupby(["fam", "mult", "exit"], dropna=False, sort=False):
+        P = pd.concat([store[(s, fam, mult, ex)] for s in COINS])
+        r = P["net"].to_numpy()
+        print(f"{fam:10s} mult {str(mult):4s} exit {ex:10s}: trades {len(P):6d} ({len(P)/5/49:5.1f}/coin/mo) win {(r>0).mean()*100:5.1f}% "
+              f"gross {P.gross.mean():+.3f}% net {r.mean():+.3f}% | IS {P.loc[P.entry_t<H.SPLIT,'net'].sum():+7.0f}% "
+              f"OOS {P.loc[P.entry_t>=H.SPLIT,'net'].sum():+7.0f}% | coins+ {int((g.IS+g.OOS>0).sum())}/5 | hold {P.hold_h.mean()*60:.0f}m")
+    best = R[(R.IS > 0)].sort_values("IS", ascending=False)
+    print(f"\ncoin-level configs positive IS: {(R.IS>0).sum()} | OOS: {(R.OOS>0).sum()} | both: {((R.IS>0)&(R.OOS>0)).sum()} of {len(R)}")
+    print(best.head(12).round(3).to_string(index=False))
