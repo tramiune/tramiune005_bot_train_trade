@@ -60,6 +60,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | DOGE_3M_DEGEN 5/15 (live) | 374 trades, 75.7% win, **−42% after real costs** |
 | 648 classic combos (Donchian/EMA/RSI/BB/squeeze, 15m/1h/4h) | 15m: none survive costs. Best robust: **4h Donchian100** (12/12 exit settings positive IS and OOS, beats random 79–99%), but only ~2.7 trades/month and 2023 −42% |
 | Mean-reversion scalping 5m/15m (BB limit, BB market, RSI2 limit), 288 configs | **0/288 profitable out-of-sample**; even before costs best OOS gross EV ≈ +0.01%/trade. Limit entries at the band are adversely selected. Highest win rate (RSI2, ~62%) still loses |
+| XRP 5m "Nada + RSI + Volume" (user's TradingView script, h=8, mult=3, RSI 20/80, vol<2x) | Only **73 signals in 4 years** (~1.5/month). Original (reverse, no TP/SL): 34 trades, IS −22% / OOS +112%, unstable. TP/SL grid: tiny TP + huge SL wins ~100% but the worst adverse move before TP was −9% (TP0.5%) / −15% (TP1%), so the tail decides; 72 trades with 0 losses cannot prove a loss rate below the 3.4% break-even. Steadiest zone TP 0.75–1% / SL 2–3%: ~+0.2%/trade, ~16–17% total over 4 years at 1x, CI touches 0 |
 
 ## Tools
 
@@ -69,6 +70,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
   interval) from data.binance.vision with SHA256 check into `data/futures_um/` (local machine).
 - [mr_search.py](./scripts/mr_search.py): mean-reversion scalping grid on 1m data, multiprocessing
   (`SYMBOL=SOLUSDT` env to switch coin after downloading it).
+- [xrp_nada.py](./scripts/xrp_nada.py): 1:1 port of the user's TradingView XRP NW+RSI+Volume script, TP/SL grid, bootstrap CI, random baseline.
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
