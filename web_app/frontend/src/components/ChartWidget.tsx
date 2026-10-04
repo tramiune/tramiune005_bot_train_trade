@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, BaselineSeries, LineSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, LogicalRange, IPriceLine } from 'lightweight-charts';
 import { calculateBB, calculateKC } from '../utils/indicators';
+import { TradeZonesPrimitive } from '../utils/tradeZones';
 import axios from 'axios';
 import { Loader2, ArrowRightToLine } from 'lucide-react';
 
@@ -26,6 +27,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const tpSeriesRef = useRef<any>(null);
     const tradeSeriesRef = useRef<any[]>([]);
     const markersPrimitiveRef = useRef<any>(null);
+    const zonesPrimitiveRef = useRef<TradeZonesPrimitive | null>(null);
     
     const candleDataRef = useRef<any[]>([]);
     const isFetchingRef = useRef<boolean>(false);
@@ -174,6 +176,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
 
     const renderBacktest = (trades: any[], shouldPan: boolean = true) => {
         setBacktestTrades(trades);
+        zonesPrimitiveRef.current?.setTrades(trades);
         if (seriesRef.current && trades.length > 0) {
             const firstCandleTime = candleDataRef.current.length > 0 ? candleDataRef.current[0].time : 0;
             const validTrades = trades.filter(t => t.time >= firstCandleTime);
@@ -250,56 +253,8 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         const padding = symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600;
         const endTime = trade.exit_time || (candleDataRef.current.length > 0 ? candleDataRef.current[candleDataRef.current.length - 1].time : trade.time + 3600);
         
-        // Remove old SL/TP boxes
-        tradeSeriesRef.current.forEach(s => {
-            try { chartRef.current?.removeSeries(s.tpSeries); } catch(e){}
-            try { chartRef.current?.removeSeries(s.slSeries); } catch(e){}
-        });
-        tradeSeriesRef.current = [];
-        
-        // Draw new SL/TP box for this trade only
-        const isLong = trade.side === 'LONG';
-        const tpSeries = chartRef.current.addSeries(BaselineSeries, {
-            baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
-            topFillColor2: isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
-            topLineColor: isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor1: !isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor2: !isLong ? 'rgba(38, 166, 154, 0.12)' : 'rgba(0, 0, 0, 0)',
-            bottomLineColor: !isLong ? '#26a69a' : 'rgba(0, 0, 0, 0)',
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false
-        });
-        
-        const slSeries = chartRef.current.addSeries(BaselineSeries, {
-            baseValue: { type: 'price', price: trade.entry },
-            topFillColor1: !isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
-            topFillColor2: !isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
-            topLineColor: !isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor1: isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
-            bottomFillColor2: isLong ? 'rgba(239, 83, 80, 0.12)' : 'rgba(0, 0, 0, 0)',
-            bottomLineColor: isLong ? '#ef5350' : 'rgba(0, 0, 0, 0)',
-            lineWidth: 1,
-            priceLineVisible: false,
-            lastValueVisible: false,
-            crosshairMarkerVisible: false
-        });
-        
-        const endPad = endTime + 180;
-        tpSeries.setData([
-            { time: trade.time, value: trade.entry },
-            { time: trade.time + 60, value: trade.tp },
-            { time: endPad, value: trade.tp }
-        ]);
-        slSeries.setData([
-            { time: trade.time, value: trade.entry },
-            { time: trade.time + 60, value: trade.sl },
-            { time: endPad, value: trade.sl }
-        ]);
-        
-        tradeSeriesRef.current = [{ tpSeries, slSeries, tradeId: trade.time }];
+        // Entry/SL/TP zones of ALL trades are painted by TradeZonesPrimitive; here we only highlight the selected one
+        zonesPrimitiveRef.current?.setActive(trade.time);
         
         chartRef.current.timeScale().setVisibleRange({
             from: (trade.time - padding) as any,
@@ -387,6 +342,11 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }
         });
         seriesRef.current = candlestickSeries;
+
+        // Entry / TP / SL zones for every trade (painted only for the visible range)
+        const zonesPrimitive = new TradeZonesPrimitive(() => candleDataRef.current);
+        candlestickSeries.attachPrimitive(zonesPrimitive);
+        zonesPrimitiveRef.current = zonesPrimitive;
 
         // Keltner Channel
         const kcUpper = chart.addSeries(LineSeries, { color: 'rgba(255, 152, 0, 0.4)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
