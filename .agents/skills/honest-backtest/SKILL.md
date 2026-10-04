@@ -66,6 +66,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 | XRP NW+RSI+Volume signal, original params, on XRP/DOGE/SOL/ETH/BTC, R:R 2–3 | **Does not generalise**: only XRP positive (12/12 exits); DOGE, SOL, ETH lose in all exits, BTC ~flat. Pooled: negative in 11/12 exits. The XRP edge is likely coin/period specific (overfit risk) |
 | 4h Donchian 55/100 breakout, SL 1.5–2 ATR, R:R 2–3, same params on 5 coins | Generalises to **altcoins** (DOGE, XRP, SOL positive), **not ETH/BTC**. Pooled 5 coins: positive in 7/8 settings, win ~38–40% at RR 2, ~0.2–0.5%/trade, ~3 trades/month/coin. Best simple candidate so far |
 | Pure candlestick price action (engulfing, pin bar, inside bar, ± at 20-bar extreme), 1h/4h, 5 coins, RR 0.5–2 (240 combos) | Win rate ≈ break-even 1/(1+RR) everywhere (RR1 ≈ 49–53%, RR2 ≈ 32–36%) → candles alone ≈ random; after costs almost all lose. **0** coin-level combos with win ≥ 70% at RR ≥ 1. Best: 4h engulfing at 20-bar extreme RR1 ≈ +0.02%/trade (flat) |
+| Bulkowski top multi-candle patterns (three line strike, crows/soldiers, morning/evening star, ± prior-trend), 1h/4h/1d, 5 coins (270 cells) | "Breakout first" rate reproduces the famous 74–93% (three line strike ~81%) **but it is an artefact**: the boundary in the predicted direction sits next to the close, the other far away. Trade win rates ≈ break-even; 0 cells with win ≥ 70% at RR ≥ 1. Only 4h morning/evening star after a prior move is positive in IS and OOS at RR 1–2 (RR1: 546 trades, 56.8% win, +0.28%/trade), driven by DOGE/XRP; BTC/ETH negative. 1d crows/soldiers: too few trades (9–25) |
 
 ## Tools
 
@@ -80,6 +81,7 @@ Lessons learned on this project (2026-10). Follow every rule before reporting a 
 - [xrp_nada_loosen.py](./scripts/xrp_nada_loosen.py): signal-parameter loosening study (IS-only selection).
 - [nada_cross_coin.py](./scripts/nada_cross_coin.py), [donchian_cross_coin.py](./scripts/donchian_cross_coin.py): same parameters on 5 coins (best anti-overfit check).
 - [price_action.py](./scripts/price_action.py): candlestick patterns on 5 coins.
+- [candle_clusters.py](./scripts/candle_clusters.py): Bulkowski multi-candle patterns, breakout-rate vs trade win-rate.
 - [strategy_search.py](./scripts/strategy_search.py): harness self-check + grid of classic
   strategies on 15m/1h/4h, selected on in-sample only.
 
