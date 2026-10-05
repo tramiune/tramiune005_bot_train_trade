@@ -1075,7 +1075,7 @@ async def backtest_doge_inverse(
                 exit_idx = i
                 exit_price = 0
                 is_win = False
-                for j in range(i+1, min(i+1440, len(df))):
+                for j in range(i+1, len(df)):
                     if side == 'long':
                         if df['low'].iloc[j] <= sl_price:
                             is_win = False; exit_idx = j; exit_price = sl_price; break
@@ -1087,6 +1087,15 @@ async def backtest_doge_inverse(
                         elif df['low'].iloc[j] <= tp_price:
                             is_win = True; exit_idx = j; exit_price = tp_price; break
                 
+                if exit_idx == i:
+                    # Mark to market at the end of data
+                    exit_idx = len(df) - 1
+                    exit_price = df['close'].iloc[-1]
+                    if side == 'long':
+                        is_win = exit_price > entry
+                    else:
+                        is_win = exit_price < entry
+                        
                 if exit_idx > i:
                     if compounding:
                         risk_amount = balance * (risk_pct / 100.0)
@@ -1097,10 +1106,18 @@ async def backtest_doge_inverse(
                     win_mult = (tp_pct/100) - maker_fee - maker_fee
                     loss_mult = -(sl_pct/100) - maker_fee - taker_fee
                     
-                    if is_win:
-                        trade_pnl = pos_size * win_mult
+                    if exit_idx == len(df) - 1 and exit_price not in [tp_price, sl_price]:
+                        # Mark to market PNL
+                        if side == 'long':
+                            actual_pct = (exit_price - entry) / entry
+                        else:
+                            actual_pct = (entry - exit_price) / entry
+                        trade_pnl = pos_size * (actual_pct - maker_fee - taker_fee)
                     else:
-                        trade_pnl = pos_size * loss_mult
+                        if is_win:
+                            trade_pnl = pos_size * win_mult
+                        else:
+                            trade_pnl = pos_size * loss_mult
                         
                     balance += trade_pnl
                     if balance > peak_balance:

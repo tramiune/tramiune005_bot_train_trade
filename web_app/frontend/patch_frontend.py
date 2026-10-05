@@ -1,0 +1,77 @@
+import re
+
+with open('src/App.tsx', 'r') as f:
+    appContent = f.read()
+
+appContent = appContent.replace("['SOLUSDT', 'BTCUSDT', 'ETHUSDT']", "['SOLUSDT', 'BTCUSDT', 'ETHUSDT', 'DOGEUSDT']")
+appContent = appContent.replace("v1.0.0 | SOL God Mode Active", "v1.0.0 | DOGE Degen Mode Ready")
+
+with open('src/App.tsx', 'w') as f:
+    f.write(appContent)
+
+with open('src/components/ChartWidget.tsx', 'r') as f:
+    chartContent = f.read()
+
+chartContent = chartContent.replace(
+    "let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=1h&limit=1000`;",
+    "let url = `https://fapi.binance.com/fapi/v1/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;"
+)
+chartContent = chartContent.replace(
+    "const url = `https://api.binance.com/api/v3/klines?symbol=${symbol.replace('/', '')}&interval=1h&limit=1000&endTime=${endTimestamp * 1000}`;",
+    "const url = `https://api.binance.com/api/v3/klines?symbol=${symbol.replace('/', '')}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000&endTime=${endTimestamp * 1000}`;"
+)
+chartContent = chartContent.replace(
+    "const wsUrl = `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_1h`;",
+    "const wsUrl = `wss://stream.binance.com:9443/ws/${symbol.toLowerCase()}@kline_${symbol === 'DOGEUSDT' ? '3m' : '1h'}`;"
+)
+chartContent = chartContent.replace(
+    '<h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - 1H</h3>',
+    '<h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - {symbol === \'DOGEUSDT\' ? \'3m (DEGEN MODE)\' : \'1H\'}</h3>'
+)
+
+# Fix the res axios get
+old_fetch = """const res = await axios.get(`http://${window.location.hostname}:8000/api/backtest?symbol=${symbol.replace('USDT', '/USDT')}`);
+            const trades = res.data;"""
+new_fetch = """let url = `http://${window.location.hostname}:8000/api/backtest?symbol=${symbol.replace('USDT', '/USDT')}`;
+            if (symbol === 'DOGEUSDT') {
+                url = `http://${window.location.hostname}:8000/api/backtest/doge_inverse?compounding=true&risk_pct=30.0`;
+            }
+            const res = await axios.get(url);
+            const trades = symbol === 'DOGEUSDT' ? res.data.data.trades.map((t: any) => ({
+                time: t.entry_time / 1000,
+                side: t.side,
+                entry: t.entry_price,
+                sl: t.side === 'LONG' ? t.entry_price * 0.85 : t.entry_price * 1.15,
+                tp: t.side === 'LONG' ? t.entry_price * 1.05 : t.entry_price * 0.95,
+                exit_time: t.exit_time / 1000,
+                pnl: t.pnl,
+                balance_after: t.balance_after
+            })) : res.data;"""
+
+chartContent = chartContent.replace(old_fetch, new_fetch)
+
+# Fix table header
+old_th = """                                <th className="px-4 py-2">RR</th>
+                            </tr>
+                        </thead>"""
+new_th = """                                <th className="px-4 py-2">{symbol === 'DOGEUSDT' ? 'PnL' : 'RR'}</th>
+                                {symbol === 'DOGEUSDT' && <th className="px-4 py-2 text-yellow-400">Balance</th>}
+                            </tr>
+                        </thead>"""
+chartContent = chartContent.replace(old_th, new_th)
+
+# Fix table row
+old_tr = """                                    <td className="px-4 py-2 font-mono text-blue-300">
+                                        {((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
+                                    </td>
+                                </tr>"""
+new_tr = """                                    <td className={"px-4 py-2 font-mono " + (symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "text-green-400" : "text-red-400") : "text-blue-300")}>
+                                        {symbol === 'DOGEUSDT' ? (trade.pnl > 0 ? "+" : "") + trade.pnl.toFixed(2) + "$" : ((trade.tp - trade.entry) / (trade.entry - trade.sl)).toFixed(1)}
+                                    </td>
+                                    {symbol === 'DOGEUSDT' && <td className="px-4 py-2 font-mono text-yellow-400 font-bold">${trade.balance_after?.toFixed(2)}</td>}
+                                </tr>"""
+chartContent = chartContent.replace(old_tr, new_tr)
+
+with open('src/components/ChartWidget.tsx', 'w') as f:
+    f.write(chartContent)
+print("Patched React UI for DOGE Compounding")
