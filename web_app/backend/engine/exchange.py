@@ -102,7 +102,7 @@ class BinanceFutures:
             # 1. Format precisions
             formatted_amount = float(self.exchange.amount_to_precision(symbol, amount))
             formatted_sl = float(self.exchange.price_to_precision(symbol, sl_price))
-            formatted_tp = float(self.exchange.price_to_precision(symbol, tp_price))
+            formatted_tp = float(self.exchange.price_to_precision(symbol, tp_price)) if tp_price > 0 else 0.0
             formatted_entry = float(self.exchange.price_to_precision(symbol, entry_price))
             
             # 2. MARKET Entry Order (Sửa lỗi kẹt lệnh Limit)
