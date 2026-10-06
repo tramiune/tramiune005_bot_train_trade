@@ -124,16 +124,14 @@ export function calculateKC(data: any[], period: number = 20, mult: number = 1.5
 }
 
 export function calculateNadarayaWatson(data: any[], h: number = 8.0, mult: number = 3.0) {
-    if (data.length < 500) return { upper: [], lower: [], baseline: [] };
+    if (data.length < 30) return { upper: [], lower: [], baseline: [] };
     
     const n = data.length;
     const windowSize = 500;
     const weights = new Float64Array(windowSize);
-    let weightSum = 0;
     const twoH2 = 2 * h * h;
     for (let k = 0; k < windowSize; k++) {
         weights[k] = Math.exp(-(k * k) / twoH2);
-        weightSum += weights[k];
     }
     
     const out = new Float64Array(n);
@@ -156,17 +154,20 @@ export function calculateNadarayaWatson(data: any[], h: number = 8.0, mult: numb
     const baseline: any[] = [];
     
     let rollingDiffSum = 0;
-    for (let i = 0; i < 499 && i < n; i++) {
+    for (let i = 0; i < n; i++) {
         rollingDiffSum += absDiff[i];
-    }
-    
-    for (let i = 499; i < n; i++) {
-        rollingDiffSum += absDiff[i] - absDiff[i - 499];
-        const mae = (rollingDiffSum / 499) * mult;
-        const time = data[i].time;
-        baseline.push({ time, value: out[i] });
-        upper.push({ time, value: out[i] + mae });
-        lower.push({ time, value: out[i] - mae });
+        if (i >= windowSize) {
+            rollingDiffSum -= absDiff[i - windowSize];
+        }
+        
+        if (i >= 30) {
+            const count = Math.min(i + 1, windowSize);
+            const mae = (rollingDiffSum / count) * mult;
+            const time = data[i].time;
+            baseline.push({ time, value: out[i] });
+            upper.push({ time, value: out[i] + mae });
+            lower.push({ time, value: out[i] - mae });
+        }
     }
     
     return { upper, lower, baseline };
@@ -280,7 +281,7 @@ export function detectStrategyTrades(candles: any[], symbol: string): StrategyTr
     const trades: StrategyTrade[] = [];
     
     if (symbol === 'XRPUSDT') {
-        if (n < 500) return [];
+        if (n < 50) return [];
         const closes = candles.map(c => c.close);
         const nw = calculateNadarayaWatson(candles, 8.0, 3.0);
         if (nw.lower.length === 0) return [];
@@ -303,7 +304,7 @@ export function detectStrategyTrades(candles: any[], symbol: string): StrategyTr
         }
         
         let lastExitIdx = 0;
-        for (let i = 500; i < n; i++) {
+        for (let i = 35; i < n; i++) {
             if (i <= lastExitIdx) continue;
             
             const prevTime = candles[i - 1].time;

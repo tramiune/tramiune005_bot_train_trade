@@ -101,7 +101,8 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         isFetchingRef.current = true;
         
         try {
-            let url = `/api/klines?symbol=${symbol}&interval=${getInterval(symbol)}&limit=1000`;
+            const limit = symbol === 'XRPUSDT' ? 1500 : 1000;
+            let url = `/api/klines?symbol=${symbol}&interval=${getInterval(symbol)}&limit=${limit}`;
             if (endTime) {
                 url += `&endTime=${endTime * 1000}`;
             }
@@ -125,7 +126,9 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
                     updateStrategyIndicators(candleDataRef.current);
-                    if (frontendCache[symbol]) renderBacktest(frontendCache[symbol], false);
+                    const strategyTrades = detectStrategyTrades(candleDataRef.current, symbol);
+                    frontendCache[symbol] = strategyTrades;
+                    renderBacktest(strategyTrades, false);
                     reapplyMarkersAndLines();
                 }
             } else {
