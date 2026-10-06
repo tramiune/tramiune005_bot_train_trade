@@ -17,39 +17,45 @@ def pine_rsi(src: pd.Series, n: int) -> pd.Series:
 def check_xrp_signal(df: pd.DataFrame) -> str:
     """
     XRP FINAL KING (Mean Reversion)
-    Nadaraya-Watson (h=8.0, mult=3.0) + RSI < 20 + Vol > 2.4x
+    Nadaraya-Watson (h=8.0, mult=3.0) + RSI < 20 / > 80 + Vol < 2.4x
+    Requires at least 1000 candles (recommend 1500) to warm up 499-period MAE
     """
-    if len(df) < 550: return "NONE"
+    if len(df) < 1000: return "NONE"
     
     h_bw = 8.0
     mult = 3.0
     rsi_os = 20
+    rsi_ob = 80
     vol_mult = 2.4
     
     c = df['close'].to_numpy()
     v = df['volume'].to_numpy()
     
-    # Nadaraya
+    # Nadaraya-Watson causal kernel
     w = np.exp(-(np.arange(500) ** 2) / (h_bw * h_bw * 2))
     out = np.convolve(c, w)[: len(c)] / w.sum()
     out[:499] = np.nan
     mae = pd.Series(np.abs(c - out)).rolling(499).mean().to_numpy() * mult
+    upper = out + mae
     lower = out - mae
     
-    # RSI
+    # RSI (Pine Script exact implementation)
     r = pine_rsi(df['close'], 14).to_numpy()
     
-    # Vol Filter
+    # Vol Filter (Volume < SMA20 * 2.4)
     high_vol = v > pd.Series(v).rolling(20).mean().to_numpy() * vol_mult
     
     i = len(df) - 2 # Latest closed candle
     
-    if np.isnan(lower[i]) or np.isnan(r[i]):
+    if np.isnan(lower[i]) or np.isnan(upper[i]) or np.isnan(r[i]):
         return "NONE"
         
     cross_dn = (c[i] < lower[i]) and (c[i-1] >= lower[i-1])
+    cross_up = (c[i] > upper[i]) and (c[i-1] <= upper[i-1])
     
     if cross_dn and (r[i] < rsi_os) and not high_vol[i]:
         return "LONG"
+    elif cross_up and (r[i] > rsi_ob) and not high_vol[i]:
+        return "SHORT"
         
     return "NONE"

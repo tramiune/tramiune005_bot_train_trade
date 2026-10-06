@@ -117,18 +117,22 @@ class TradingEngine:
         entry_price = float(df["close"].iloc[-2])
         
         if strategy == "XRP":
-            sl_price = entry_price * (1 - 0.0055)
-            tp_price = entry_price * (1 + 0.179)
+            if side == 'LONG':
+                sl_price = entry_price * (1 - 0.0055)
+                tp_price = entry_price * (1 + 0.179)
+            else:
+                sl_price = entry_price * (1 + 0.0055)
+                tp_price = entry_price * (1 - 0.179)
             risk_per_coin = abs(entry_price - sl_price)
         elif strategy == "SOL":
             from engine.strategies.sol_supertrend import get_sol_sl_prices
             lb, ub = get_sol_sl_prices(df)
             if side == 'LONG':
                 sl_price = lb
-                tp_price = entry_price * 10.0 # Bắt trend vô tận, chốt bằng tay hoặc trailing (ở đây để giá siêu cao)
+                tp_price = 0.0 # SOL exits dynamically when trend flips
             else:
                 sl_price = ub
-                tp_price = entry_price * 0.1
+                tp_price = 0.0
             risk_per_coin = abs(entry_price - sl_price)
         else:
             return
@@ -390,15 +394,15 @@ class TradingEngine:
         try:
             if bot_mode == "XRP":
                 from engine.strategies.xrp_nada_final import check_xrp_signal
-                xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 600)
+                xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 1500)
                 xrp_df = pd.DataFrame(xrp_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
                 signal = check_xrp_signal(xrp_df)
                 last_time = xrp_df["timestamp"].iloc[-2]
                 
-                if signal == "LONG" and self.last_trade_time.get("XRP") != last_time:
+                if signal in ["LONG", "SHORT"] and self.last_trade_time.get("XRP") != last_time:
                     self.last_trade_time["XRP"] = last_time
                     if self.is_running:
-                        await self.execute_trade("XRP/USDT", "XRP", 3.0, xrp_df, 1.0)
+                        await self.execute_trade("XRP/USDT", "XRP", 3.0, xrp_df, 1.0, side=signal)
                         
             elif bot_mode == "SOL":
                 from engine.strategies.sol_supertrend import check_sol_signal
@@ -407,19 +411,11 @@ class TradingEngine:
                 signal = check_sol_signal(sol_df)
                 last_time = sol_df["timestamp"].iloc[-2]
                 
-                # Check for Trend Flip (Close existing positions)
-                if signal in ["LONG", "SHORT"]:
-                    self.log(f"SOL Supertrend flipped to {signal}! Closing old positions.")
-                    try:
-                        await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': 'SOLUSDT'})
-                        # We don't strictly need to manually close the position because execute_full_trade handles reversal?
-                        # No, we should close it. Let's let the execute_trade open the new position which will overwrite it if hedge mode is off.
-                    except:
-                        pass
-                
                 if signal in ["LONG", "SHORT"] and self.last_trade_time.get("SOL") != last_time:
                     self.last_trade_time["SOL"] = last_time
                     if self.is_running:
+                        self.log(f"SOL Supertrend flipped to {signal}! Closing existing positions and opening new...")
+                        await self.exchange.close_position("SOL/USDT")
                         await self.execute_trade("SOL/USDT", "SOL", 3.0, sol_df, 1.0, side=signal)
                         
         except Exception as e:

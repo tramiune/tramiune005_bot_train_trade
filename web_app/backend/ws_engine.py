@@ -46,9 +46,15 @@ async def binance_ws_loop():
     await verify_futures_source(symbol, interval)
     
     last_candle_time = 0
+    last_manage_time = 0
     
     while True:
         try:
+            now_ts = int(time.time())
+            if now_ts - last_manage_time >= 30:
+                last_manage_time = now_ts
+                await trader_instance.manage_open_trades()
+
             ohlcv = await trader_instance.exchange.fetch_ohlcv(symbol, interval, limit=2)
             if not ohlcv or len(ohlcv) < 2:
                 await asyncio.sleep(2)
