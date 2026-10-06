@@ -74,7 +74,11 @@ def get_pm2_stats():
     try:
         cmd = "/usr/bin/pm2 jlist" if os.path.exists("/usr/bin/pm2") else "pm2 jlist"
         out = subprocess.check_output(cmd, shell=True).decode()
-        data = json.loads(out)
+        idx = out.find("[")
+        if idx != -1:
+            data = json.loads(out[idx:])
+        else:
+            data = json.loads(out)
         res = {}
         for p in data:
             name = p.get("name")
