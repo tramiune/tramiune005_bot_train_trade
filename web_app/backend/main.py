@@ -22,8 +22,6 @@ from ws_engine import trader_instance, binance_ws_loop
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     import asyncio
-    # Start prefetching in background
-    await prefetch_klines() # block until cache is loaded
     
     asyncio.create_task(trader_instance.start())
     asyncio.create_task(binance_ws_loop())

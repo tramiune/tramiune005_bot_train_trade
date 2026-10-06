@@ -294,16 +294,6 @@ class TradingEngine:
     async def start(self):
         self.is_running = True
         self.log("Trading Engine set to ACTIVE (Will execute new trades).")
-        
-        # Ensure initial DB configs
-        db = SessionLocal()
-        if not db.query(BotConfig).filter_by(strategy="DOGE_3M_DEGEN").first():
-            db.add(BotConfig(strategy="DOGE_3M_DEGEN", is_active=True, risk_per_trade_pct=30.0))
-        db.commit()
-        db.close()
-        
-        await self.sync_missed_trades()
-        await self.recover_missed_signal()
         self.log("Engine is now waiting for WebSocket candle close events...")
 
 
