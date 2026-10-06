@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, BaselineSeries, LineSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, LogicalRange, IPriceLine } from 'lightweight-charts';
-import { calculateNadarayaWatson, calculateSupertrend } from '../utils/indicators';
+import { calculateNadarayaWatson, calculateSupertrend, detectStrategyTrades } from '../utils/indicators';
 import { TradeZonesPrimitive } from '../utils/tradeZones';
 import axios from 'axios';
 import { Loader2, ArrowRightToLine } from 'lucide-react';
@@ -152,40 +152,47 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     };
 
     const fetchBacktest = async () => {
-        // Show cached trades instantly, but ALWAYS refetch so new trades appear without a page reload
-        const hadCache = !!frontendCache[symbol];
-        if (hadCache) {
-            renderBacktest(frontendCache[symbol], false);
-            setIsBacktestLoading(false);
-        } else {
-            setIsBacktestLoading(true);
-        }
+        setIsBacktestLoading(true);
         try {
-            const url = `/api/trades`;
-            const res = await axios.get(url);
+            // 1. Detect strategy trades directly from candle history
+            const strategyTrades = detectStrategyTrades(candleDataRef.current, symbol);
             
-            // Filter by symbol
+            // 2. Fetch real trades from database for this coin
+            const apiBase = symbol === 'SOLUSDT' ? '/api/sol' : '/api/xrp';
             const targetSymbol = symbol.replace('USDT', '/USDT');
-            const symbolTrades = res.data.filter((t: any) => t.symbol === targetSymbol);
+            let dbTrades: any[] = [];
+            try {
+                const res = await axios.get(`${apiBase}/trades`);
+                dbTrades = (res.data || [])
+                    .filter((t: any) => t.symbol === targetSymbol)
+                    .map((t: any) => ({
+                        time: new Date(t.entry_time).getTime() / 1000,
+                        side: t.side,
+                        entry: t.entry_price,
+                        sl: t.stop_loss || (t.side === 'LONG' ? t.entry_price * 0.99 : t.entry_price * 1.01),
+                        tp: t.take_profit || (t.side === 'LONG' ? t.entry_price * 1.15 : t.entry_price * 0.85),
+                        exit_time: t.exit_time ? new Date(t.exit_time).getTime() / 1000 : undefined,
+                        pnl: t.pnl,
+                        balance_after: t.balance_after
+                    }));
+            } catch (err) {
+                console.error("Failed to fetch db trades", err);
+            }
             
-            const trades = symbolTrades.map((t: any) => ({
-                time: new Date(t.entry_time).getTime() / 1000,
-                side: t.side,
-                entry: t.entry_price,
-                sl: t.stop_loss || (t.side === 'LONG' ? t.entry_price * 0.85 : t.entry_price * 1.15),
-                tp: t.take_profit || (t.side === 'LONG' ? t.entry_price * 1.05 : t.entry_price * 0.95),
-                exit_time: t.exit_time ? new Date(t.exit_time).getTime() / 1000 : undefined,
-                pnl: t.pnl,
-                balance_after: t.balance_after
-            }));
+            // Merge strategy trades and DB trades
+            const tradeMap = new Map<number, any>();
+            for (const t of strategyTrades) {
+                tradeMap.set(t.time, t);
+            }
+            for (const t of dbTrades) {
+                tradeMap.set(t.time, t);
+            }
             
-            // Sort trades by time just to be safe
-            trades.sort((a: any, b: any) => a.time - b.time);
+            const allTrades = Array.from(tradeMap.values());
+            allTrades.sort((a: any, b: any) => a.time - b.time);
             
-            const previousCount = hadCache ? frontendCache[symbol].length : 0;
-            frontendCache[symbol] = trades;
-            // Pan to the latest trade on first load, or when a brand-new trade just appeared
-            renderBacktest(trades, !hadCache || trades.length > previousCount);
+            frontendCache[symbol] = allTrades;
+            renderBacktest(allTrades, false);
         } catch (e) {
             console.error("Failed to fetch backtest", e);
         } finally {

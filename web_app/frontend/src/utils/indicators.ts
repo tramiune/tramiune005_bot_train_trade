@@ -233,3 +233,261 @@ export function calculateSupertrend(data: any[], period: number = 17, mult: numb
     
     return { supertrend };
 }
+
+export function calculatePineRSI(closes: number[], n: number = 14): Float64Array {
+    const len = closes.length;
+    const out = new Float64Array(len);
+    out.fill(NaN);
+    if (len <= n) return out;
+    
+    let sumUp = 0;
+    let sumDn = 0;
+    for (let i = 1; i <= n; i++) {
+        const diff = closes[i] - closes[i - 1];
+        if (diff > 0) sumUp += diff;
+        else sumDn += -diff;
+    }
+    
+    let au = sumUp / n;
+    let ad = sumDn / n;
+    out[n] = ad === 0 ? 100 : 100 - 100 / (1 + au / ad);
+    
+    for (let i = n + 1; i < len; i++) {
+        const diff = closes[i] - closes[i - 1];
+        const up = diff > 0 ? diff : 0;
+        const dn = diff < 0 ? -diff : 0;
+        au = (au * (n - 1) + up) / n;
+        ad = (ad * (n - 1) + dn) / n;
+        out[i] = ad === 0 ? 100 : 100 - 100 / (1 + au / ad);
+    }
+    return out;
+}
+
+export interface StrategyTrade {
+    time: number;
+    side: 'LONG' | 'SHORT';
+    entry: number;
+    sl: number;
+    tp: number;
+    exit_time?: number;
+    exit_price?: number;
+    pnl?: number;
+}
+
+export function detectStrategyTrades(candles: any[], symbol: string): StrategyTrade[] {
+    if (!candles || candles.length < 50) return [];
+    const n = candles.length;
+    const trades: StrategyTrade[] = [];
+    
+    if (symbol === 'XRPUSDT') {
+        if (n < 500) return [];
+        const closes = candles.map(c => c.close);
+        const nw = calculateNadarayaWatson(candles, 8.0, 3.0);
+        if (nw.lower.length === 0) return [];
+        
+        const lowerMap = new Map<number, number>();
+        for (const item of nw.lower) lowerMap.set(item.time, item.value);
+        
+        const rsi = calculatePineRSI(closes, 14);
+        
+        const volSMA = new Float64Array(n);
+        let volSum = 0;
+        for (let i = 0; i < n; i++) {
+            volSum += candles[i].volume;
+            if (i >= 20) {
+                volSum -= candles[i - 20].volume;
+                volSMA[i] = volSum / 20;
+            } else {
+                volSMA[i] = volSum / (i + 1);
+            }
+        }
+        
+        let lastExitIdx = 0;
+        for (let i = 500; i < n; i++) {
+            if (i <= lastExitIdx) continue;
+            
+            const prevTime = candles[i - 1].time;
+            const curTime = candles[i].time;
+            const prevLower = lowerMap.get(prevTime);
+            const curLower = lowerMap.get(curTime);
+            
+            if (curLower === undefined || prevLower === undefined) continue;
+            
+            const crossDn = candles[i].close < curLower && candles[i - 1].close >= prevLower;
+            const rsiOk = rsi[i] < 20;
+            const volOk = candles[i].volume <= volSMA[i] * 2.4;
+            
+            if (crossDn && rsiOk && volOk) {
+                const entry = candles[i].close;
+                const sl = entry * (1 - 0.0055);
+                const tp = entry * (1 + 0.179);
+                
+                let exitTime: number | undefined = undefined;
+                let exitPrice: number | undefined = undefined;
+                let pnl = 0;
+                
+                for (let j = i + 1; j < n; j++) {
+                    if (candles[j].low <= sl) {
+                        exitTime = candles[j].time;
+                        exitPrice = sl;
+                        pnl = -1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                    if (candles[j].high >= tp) {
+                        exitTime = candles[j].time;
+                        exitPrice = tp;
+                        pnl = 1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                }
+                
+                trades.push({
+                    time: curTime,
+                    side: 'LONG',
+                    entry,
+                    sl,
+                    tp,
+                    exit_time: exitTime,
+                    exit_price: exitPrice,
+                    pnl
+                });
+            }
+        }
+    } else if (symbol === 'SOLUSDT') {
+        const period = 17;
+        const mult = 4.4;
+        const tr = new Float64Array(n);
+        tr[0] = candles[0].high - candles[0].low;
+        for (let i = 1; i < n; i++) {
+            const hl = candles[i].high - candles[i].low;
+            const hc = Math.abs(candles[i].high - candles[i - 1].close);
+            const lc = Math.abs(candles[i].low - candles[i - 1].close);
+            tr[i] = Math.max(hl, hc, lc);
+        }
+        
+        const atr = new Float64Array(n);
+        atr[0] = tr[0];
+        for (let i = 1; i < n; i++) {
+            atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+        }
+        
+        const finalUb = new Float64Array(n);
+        const finalLb = new Float64Array(n);
+        const trend = new Int8Array(n);
+        trend.fill(1);
+        
+        for (let i = 1; i < n; i++) {
+            const hl2 = (candles[i].high + candles[i].low) / 2;
+            const basicUb = hl2 + mult * atr[i];
+            const basicLb = hl2 - mult * atr[i];
+            
+            if (basicUb < finalUb[i - 1] || candles[i - 1].close > finalUb[i - 1]) finalUb[i] = basicUb;
+            else finalUb[i] = finalUb[i - 1];
+            
+            if (basicLb > finalLb[i - 1] || candles[i - 1].close < finalLb[i - 1]) finalLb[i] = basicLb;
+            else finalLb[i] = finalLb[i - 1];
+            
+            if (trend[i - 1] === 1 && candles[i].close < finalLb[i]) trend[i] = -1;
+            else if (trend[i - 1] === -1 && candles[i].close > finalUb[i]) trend[i] = 1;
+            else trend[i] = trend[i - 1];
+        }
+        
+        let lastExitIdx = 0;
+        for (let i = period + 1; i < n; i++) {
+            if (i <= lastExitIdx) continue;
+            
+            const isBuy = trend[i] === 1 && trend[i - 1] === -1;
+            const isSell = trend[i] === -1 && trend[i - 1] === 1;
+            
+            if (isBuy) {
+                const entry = candles[i].close;
+                const sl = entry * (1 - 0.043);
+                const tp = entry * (1 + 0.172);
+                let exitTime: number | undefined = undefined;
+                let exitPrice: number | undefined = undefined;
+                let pnl = 0;
+                
+                for (let j = i + 1; j < n; j++) {
+                    if (candles[j].low <= sl) {
+                        exitTime = candles[j].time;
+                        exitPrice = sl;
+                        pnl = -1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                    if (candles[j].high >= tp) {
+                        exitTime = candles[j].time;
+                        exitPrice = tp;
+                        pnl = 1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                    if (trend[j] === -1) {
+                        exitTime = candles[j].time;
+                        exitPrice = candles[j].close;
+                        pnl = exitPrice > entry ? 1 : -1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                }
+                
+                trades.push({
+                    time: candles[i].time,
+                    side: 'LONG',
+                    entry,
+                    sl,
+                    tp,
+                    exit_time: exitTime,
+                    exit_price: exitPrice,
+                    pnl
+                });
+            } else if (isSell) {
+                const entry = candles[i].close;
+                const sl = entry * (1 + 0.043);
+                const tp = entry * (1 - 0.172);
+                let exitTime: number | undefined = undefined;
+                let exitPrice: number | undefined = undefined;
+                let pnl = 0;
+                
+                for (let j = i + 1; j < n; j++) {
+                    if (candles[j].high >= sl) {
+                        exitTime = candles[j].time;
+                        exitPrice = sl;
+                        pnl = -1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                    if (candles[j].low <= tp) {
+                        exitTime = candles[j].time;
+                        exitPrice = tp;
+                        pnl = 1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                    if (trend[j] === 1) {
+                        exitTime = candles[j].time;
+                        exitPrice = candles[j].close;
+                        pnl = exitPrice < entry ? 1 : -1;
+                        lastExitIdx = j;
+                        break;
+                    }
+                }
+                
+                trades.push({
+                    time: candles[i].time,
+                    side: 'SHORT',
+                    entry,
+                    sl,
+                    tp,
+                    exit_time: exitTime,
+                    exit_price: exitPrice,
+                    pnl
+                });
+            }
+        }
+    }
+    
+    return trades;
+}

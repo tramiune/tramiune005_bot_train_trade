@@ -120,6 +120,17 @@ export class TradeZonesPrimitive {
             ctx.setLineDash([4 * hr, 3 * hr]);
             ctx.beginPath(); ctx.moveTo(x1, yEntry * vr); ctx.lineTo(x1 + w, yEntry * vr); ctx.stroke();
             ctx.setLineDash([]);
+
+            // TP, Entry, SL text badges
+            if (active || w > 30 * hr) {
+                ctx.font = `bold ${Math.round(10 * vr)}px sans-serif`;
+                ctx.fillStyle = `rgba(${GREEN}, 0.95)`;
+                ctx.fillText(`TP: $${t.tp.toFixed(4)}`, x1 + 6 * hr, yTp * vr - 4 * vr);
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+                ctx.fillText(`Entry: $${t.entry.toFixed(4)}`, x1 + 6 * hr, yEntry * vr - 4 * vr);
+                ctx.fillStyle = `rgba(${RED}, 0.95)`;
+                ctx.fillText(`SL: $${t.sl.toFixed(4)}`, x1 + 6 * hr, ySl * vr + 12 * vr);
+            }
         }
     }
 }
