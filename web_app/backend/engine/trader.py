@@ -120,7 +120,8 @@ class TradingEngine:
         position_size = risk_amount / risk_per_coin
         notional_value = position_size * entry_price
         
-        required_leverage = int(notional_value / balance) + 1
+        # Calculate leverage with a 35% buffer for Binance maintenance margin and trading fees
+        required_leverage = int(notional_value / (balance * 0.65)) + 1
         required_leverage = max(1, min(required_leverage, 75))
         
         self.log(f"[{symbol}] Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size} (Leverage: {required_leverage}x)")
@@ -134,11 +135,18 @@ class TradingEngine:
                 
             try:
                 await self.exchange.exchange.set_margin_mode('CROSSED', symbol.replace('/', ''))
+            except:
+                pass
+
+            try:
                 await self.exchange.exchange.set_leverage(required_leverage, symbol.replace('/', ''))
             except:
                 pass
                 
-            await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry_price, sl_price, tp_price)
+            entry_order = await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry_price, sl_price, tp_price)
+            if not entry_order:
+                self.log(f"[{symbol}] Đặt lệnh thất bại trên Binance! Kiểm tra số dư ký quỹ.", "ERROR")
+                return
         else:
             self.log(f"[{symbol}] API keys NOT found. PAPER TRADING mode.")
 
