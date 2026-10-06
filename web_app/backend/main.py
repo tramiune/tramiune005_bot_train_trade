@@ -167,8 +167,10 @@ async def get_wallets(db: Session = Depends(get_db)):
         w_xrp = get_or_create_wallet("XRP", db)
         w_sol = get_or_create_wallet("SOL", db)
         
-        xrp_balance = max(0.0, (total_free * (w_xrp.allocation_pct / 100.0)) + w_xrp.realized_pnl)
-        sol_balance = max(0.0, (total_free * (w_sol.allocation_pct / 100.0)) + w_sol.realized_pnl)
+        # Đã sửa lỗi hiển thị sụt tiền khi vào lệnh: Tính dựa trên total_wallet (Tổng tài sản) thay vì total_free (Tài sản rảnh rỗi).
+        # Và bỏ cộng thêm realized_pnl để tránh đếm kép.
+        xrp_balance = max(0.0, total_wallet * (w_xrp.allocation_pct / 100.0))
+        sol_balance = max(0.0, total_wallet * (w_sol.allocation_pct / 100.0))
         
         return {
             "status": "ok",
