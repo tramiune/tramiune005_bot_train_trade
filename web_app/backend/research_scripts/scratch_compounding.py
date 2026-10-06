@@ -29,7 +29,7 @@ def run():
     peak_1 = cap_1
     mdd_1 = 0
     
-    # Kịch bản 2: Risk 2% (1 R = 2%)
+    # Kịch bản 2: Risk 3% (1 R = 2%)
     cap_2 = 10_000_000
     peak_2 = cap_2
     mdd_2 = 0
@@ -44,8 +44,8 @@ def run():
         dd_1 = (cap_1 - peak_1) / peak_1
         mdd_1 = min(mdd_1, dd_1)
         
-        # Risk 2%
-        pct_2 = r * 0.02
+        # Risk 3%
+        pct_2 = r * 0.03
         cap_2 = cap_2 * (1 + pct_2)
         peak_2 = max(peak_2, cap_2)
         dd_2 = (cap_2 - peak_2) / peak_2
@@ -56,7 +56,7 @@ def run():
     print(f"- Số tiền cuối cùng: {cap_1:,.0f} VNĐ")
     print(f"- Sụt giảm tối đa (Max Drawdown): {mdd_1*100:.1f}%")
     
-    print(f"\nKỊCH BẢN 2 (Risk 2% vốn / Lệnh):")
+    print(f"\nKỊCH BẢN 2 (Risk 3% vốn / Lệnh):")
     print(f"- Số tiền cuối cùng: {cap_2:,.0f} VNĐ")
     print(f"- Sụt giảm tối đa (Max Drawdown): {mdd_2*100:.1f}%")
 
