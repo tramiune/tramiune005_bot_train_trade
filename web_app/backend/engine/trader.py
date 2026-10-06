@@ -134,11 +134,8 @@ class TradingEngine:
         self.log(f"[{symbol}] Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size:.4f} (Leverage: {required_leverage}x | Virtual Balance: ${virtual_balance:.2f} [{alloc_pct:.0f}%])")
         
         if self.exchange.api_key and self.exchange.secret_key:
-            try:
-                await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
-                await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
-            except:
-                pass
+            # Lỗi 2: Đóng sạch vị thế và lệnh cũ trước khi đặt lệnh mới (tránh kẹt 2 đầu hoặc kẹt vị thế to)
+            await self.exchange.close_position(symbol)
                 
             try:
                 await self.exchange.exchange.set_margin_mode('CROSSED', symbol.replace('/', ''))
