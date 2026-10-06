@@ -1,5 +1,4 @@
 import React, { useEffect, useState } from 'react';
-import { Play, Square, Activity, Settings } from 'lucide-react';
 import axios from 'axios';
 
 interface ControlPanelProps {
@@ -13,6 +12,7 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
 
     const [status, setStatus] = useState<string>('UNKNOWN');
     const [balance, setBalance] = useState<number | null>(null);
+    const [balanceStatus, setBalanceStatus] = useState<string>('ok');
     const [riskPct, setRiskPct] = useState<number>(10);
     const [tgReady, setTgReady] = useState<boolean>(false);
     
@@ -22,6 +22,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
     const [isSavingSettings, setIsSavingSettings] = useState(false);
 
     useEffect(() => {
+        setBalance(null);
+        setBalanceStatus('loading');
         fetchStatus();
         fetchBalance();
         fetchSettings();
@@ -51,8 +53,11 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
         try {
             const res = await axios.get(`${apiBase}/balance`);
             setBalance(res.data.balance);
+            setBalanceStatus(res.data.status || 'ok');
         } catch (error) {
             console.error('Failed to fetch balance', error);
+            setBalance(null);
+            setBalanceStatus('error');
         }
     };
 
@@ -88,13 +93,13 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
         fetchStatus();
     };
 
-    const testOrder = async () => {
-        if (!confirm(`Kích hoạt bắn 1 tín hiệu LONG ${coinLabel} thử nghiệm tại giá thị trường hiện tại (vận hành đầy đủ y hệt tín hiệu thật)?`)) return;
+    const testOrder = async (side: 'LONG' | 'SHORT' = 'LONG') => {
+        if (!confirm(`Kích hoạt bắn 1 tín hiệu ${side} ${coinLabel} thử nghiệm tại giá thị trường hiện tại (vận hành đầy đủ y hệt tín hiệu thật)?`)) return;
         
         setIsTesting(true);
         try {
-            const res = await axios.post(`${apiBase}/test_order`, { side: 'LONG' });
-            alert(res.data.message || `Lệnh Test LONG ${coinLabel} đã được bắn lên Binance & Telegram thành công!`);
+            const res = await axios.post(`${apiBase}/test_order`, { side });
+            alert(res.data.message || `Lệnh Test ${side} ${coinLabel} đã được bắn lên Binance & Telegram thành công!`);
         } catch (error: any) {
             alert('Lỗi Test Order: ' + (error.response?.data?.detail || error.message));
         } finally {
@@ -128,17 +133,25 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
                         <span className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform duration-300 ${status === 'RUNNING' ? 'translate-x-6' : 'translate-x-1'}`} />
                     </button>
                     <span className={`text-xs font-extrabold tracking-wider ${status === 'RUNNING' ? 'text-green-400 drop-shadow-[0_0_8px_rgba(74,222,128,0.5)]' : 'text-gray-500'}`}>
-                        {status === 'RUNNING' ? 'BOT ON' : 'BOT OFF'}
+                        {status === 'RUNNING' ? `${coinLabel} ON` : `${coinLabel} OFF`}
                     </span>
                 </div>
                 
                 <div className="h-8 w-px bg-white/10 hidden md:block"></div>
                 
                 <div className="flex flex-col items-center md:items-start">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5">Balance</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5">{coinLabel} Balance</span>
                     <div className="flex items-center text-sm">
-                        <span className="text-yellow-400 font-mono font-bold drop-shadow-md">${balance !== null ? balance.toFixed(2) : '---'}</span>
-                        <button onClick={fetchBalance} className="ml-1.5 text-gray-500 hover:text-white transition-colors">↻</button>
+                        {balanceStatus === 'loading' ? (
+                            <span className="text-gray-400 font-mono text-xs animate-pulse">Loading...</span>
+                        ) : balanceStatus === 'keys_missing' ? (
+                            <span className="text-amber-400/90 font-mono text-xs bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30" title="Chưa nhập API Key cho bot này">Chưa có API Key</span>
+                        ) : balance !== null ? (
+                            <span className="text-yellow-400 font-mono font-bold drop-shadow-md">${balance.toFixed(2)}</span>
+                        ) : (
+                            <span className="text-gray-500 font-mono text-xs">---</span>
+                        )}
+                        <button onClick={fetchBalance} className="ml-1.5 text-gray-500 hover:text-white transition-colors" title="Làm mới số dư">↻</button>
                     </div>
                 </div>
                 
@@ -174,13 +187,32 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
                 </div>
                 
                 <div className="flex space-x-2 w-full md:w-auto">
-                    <button 
-                        onClick={testOrder}
-                        disabled={isTesting}
-                        className={`flex-1 md:flex-none px-4 py-2 text-xs rounded-xl font-bold tracking-wide transition-all duration-300 border ${isTesting ? 'bg-yellow-900/30 text-yellow-700/50 border-yellow-900/50 cursor-not-allowed' : 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:border-yellow-400/50 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)]'}`}
-                    >
-                        {isTesting ? 'Testing...' : 'Test Lệnh'}
-                    </button>
+                    {isSol ? (
+                        <>
+                            <button 
+                                onClick={() => testOrder('LONG')}
+                                disabled={isTesting}
+                                className={`px-3 py-2 text-xs rounded-xl font-bold tracking-wide transition-all border ${isTesting ? 'opacity-50 cursor-not-allowed' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border-green-500/30 hover:border-green-400/50'}`}
+                            >
+                                {isTesting ? '...' : 'Test BUY'}
+                            </button>
+                            <button 
+                                onClick={() => testOrder('SHORT')}
+                                disabled={isTesting}
+                                className={`px-3 py-2 text-xs rounded-xl font-bold tracking-wide transition-all border ${isTesting ? 'opacity-50 cursor-not-allowed' : 'bg-orange-500/10 hover:bg-orange-500/20 text-orange-400 border-orange-500/30 hover:border-orange-400/50'}`}
+                            >
+                                {isTesting ? '...' : 'Test SELL'}
+                            </button>
+                        </>
+                    ) : (
+                        <button 
+                            onClick={() => testOrder('LONG')}
+                            disabled={isTesting}
+                            className={`flex-1 md:flex-none px-4 py-2 text-xs rounded-xl font-bold tracking-wide transition-all duration-300 border ${isTesting ? 'bg-yellow-900/30 text-yellow-700/50 border-yellow-900/50 cursor-not-allowed' : 'bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-400 border-yellow-500/30 hover:border-yellow-400/50 hover:shadow-[0_0_15px_rgba(234,179,8,0.2)]'}`}
+                        >
+                            {isTesting ? 'Testing...' : 'Test Lệnh BUY'}
+                        </button>
+                    )}
                     <button 
                         onClick={cancelOrders}
                         disabled={isCanceling}

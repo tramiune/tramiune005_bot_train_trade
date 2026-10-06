@@ -394,98 +394,54 @@ export function detectStrategyTrades(candles: any[], symbol: string): StrategyTr
             else trend[i] = trend[i - 1];
         }
         
-        let lastExitIdx = 0;
+        // Always-In-The-Market Sequential Loop (Zero Gaps)
+        let currentTrade: StrategyTrade | null = null;
+        
         for (let i = period + 1; i < n; i++) {
-            if (i <= lastExitIdx) continue;
+            const isFlip = trend[i] !== trend[i - 1];
             
-            const isBuy = trend[i] === 1 && trend[i - 1] === -1;
-            const isSell = trend[i] === -1 && trend[i - 1] === 1;
-            
-            if (isBuy) {
-                const entry = candles[i].close;
-                const sl = entry * (1 - 0.043);
-                const tp = entry * (1 + 0.172);
-                let exitTime: number | undefined = undefined;
-                let exitPrice: number | undefined = undefined;
-                let pnl = 0;
-                
-                for (let j = i + 1; j < n; j++) {
-                    if (candles[j].low <= sl) {
-                        exitTime = candles[j].time;
-                        exitPrice = sl;
-                        pnl = -1;
-                        lastExitIdx = j;
-                        break;
+            if (isFlip) {
+                // 1. Close current active trade if exists
+                if (currentTrade) {
+                    const exitPrice = candles[i].close;
+                    currentTrade.exit_time = candles[i].time;
+                    currentTrade.exit_price = exitPrice;
+                    if (currentTrade.side === 'LONG') {
+                        currentTrade.pnl = ((exitPrice - currentTrade.entry) / currentTrade.entry) * 100;
+                    } else {
+                        currentTrade.pnl = ((currentTrade.entry - exitPrice) / currentTrade.entry) * 100;
                     }
-                    if (candles[j].high >= tp) {
-                        exitTime = candles[j].time;
-                        exitPrice = tp;
-                        pnl = 1;
-                        lastExitIdx = j;
-                        break;
-                    }
-                    if (trend[j] === -1) {
-                        exitTime = candles[j].time;
-                        exitPrice = candles[j].close;
-                        pnl = exitPrice > entry ? 1 : -1;
-                        lastExitIdx = j;
-                        break;
-                    }
+                    trades.push(currentTrade);
                 }
                 
-                trades.push({
+                // 2. Open new opposite trade immediately at the exact same candle
+                const entry = candles[i].close;
+                const side = trend[i] === 1 ? 'LONG' : 'SHORT';
+                const sl = side === 'LONG' ? (finalLb[i] || entry * 0.957) : (finalUb[i] || entry * 1.043);
+                const tp = side === 'LONG' ? entry * 1.172 : entry * 0.828;
+                
+                currentTrade = {
                     time: candles[i].time,
-                    side: 'LONG',
+                    side,
                     entry,
                     sl,
                     tp,
-                    exit_time: exitTime,
-                    exit_price: exitPrice,
-                    pnl
-                });
-            } else if (isSell) {
-                const entry = candles[i].close;
-                const sl = entry * (1 + 0.043);
-                const tp = entry * (1 - 0.172);
-                let exitTime: number | undefined = undefined;
-                let exitPrice: number | undefined = undefined;
-                let pnl = 0;
-                
-                for (let j = i + 1; j < n; j++) {
-                    if (candles[j].high >= sl) {
-                        exitTime = candles[j].time;
-                        exitPrice = sl;
-                        pnl = -1;
-                        lastExitIdx = j;
-                        break;
-                    }
-                    if (candles[j].low <= tp) {
-                        exitTime = candles[j].time;
-                        exitPrice = tp;
-                        pnl = 1;
-                        lastExitIdx = j;
-                        break;
-                    }
-                    if (trend[j] === 1) {
-                        exitTime = candles[j].time;
-                        exitPrice = candles[j].close;
-                        pnl = exitPrice < entry ? 1 : -1;
-                        lastExitIdx = j;
-                        break;
-                    }
-                }
-                
-                trades.push({
-                    time: candles[i].time,
-                    side: 'SHORT',
-                    entry,
-                    sl,
-                    tp,
-                    exit_time: exitTime,
-                    exit_price: exitPrice,
-                    pnl
-                });
+                    exit_time: undefined,
+                    exit_price: undefined,
+                    pnl: 0
+                };
             }
+        }
+        
+        // Add the currently active open trade (running to current candle)
+        if (currentTrade) {
+            const curPrice = candles[n - 1].close;
+            if (currentTrade.side === 'LONG') {
+                currentTrade.pnl = ((curPrice - currentTrade.entry) / currentTrade.entry) * 100;
+            } else {
+                currentTrade.pnl = ((currentTrade.entry - curPrice) / currentTrade.entry) * 100;
+            }
+            trades.push(currentTrade);
         }
     }
     

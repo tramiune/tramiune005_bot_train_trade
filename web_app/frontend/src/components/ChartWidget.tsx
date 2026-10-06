@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, BaselineSeries, LineSeries } from 'lightweight-charts';
-import type { IChartApi, ISeriesApi, LogicalRange, IPriceLine } from 'lightweight-charts';
+import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, LineSeries } from 'lightweight-charts';
+import type { IChartApi, ISeriesApi, LogicalRange } from 'lightweight-charts';
 import { calculateNadarayaWatson, calculateSupertrend, detectStrategyTrades } from '../utils/indicators';
 import { TradeZonesPrimitive } from '../utils/tradeZones';
 import axios from 'axios';
@@ -31,9 +31,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const nwBaseSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     const stSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     
-    // Price line references (changed to series references)
-    const tpSeriesRef = useRef<any>(null);
-    const tradeSeriesRef = useRef<any[]>([]);
     const markersPrimitiveRef = useRef<any>(null);
     const zonesPrimitiveRef = useRef<TradeZonesPrimitive | null>(null);
     
@@ -44,9 +41,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     // Store active trade to redraw on pagination
     const activeTradeRef = useRef<any>(null);
     
-    const [backtestTrades, setBacktestTrades] = useState<any[]>([]);
     const [isBacktestLoading, setIsBacktestLoading] = useState<boolean>(true);
-    const [activeTradeId, setActiveTradeId] = useState<number | null>(null);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
 
     const updateStrategyIndicators = (candles: any[]) => {
@@ -90,9 +85,9 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }));
             
             if (!markersPrimitiveRef.current) {
-                markersPrimitiveRef.current = createSeriesMarkers(seriesRef.current, markers);
+                markersPrimitiveRef.current = createSeriesMarkers(seriesRef.current, markers as any);
             } else {
-                markersPrimitiveRef.current.setMarkers(markers);
+                markersPrimitiveRef.current.setMarkers(markers as any);
             }
             
             if (activeTradeRef.current) {
@@ -165,30 +160,35 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 const res = await axios.get(`${apiBase}/trades`);
                 dbTrades = (res.data || [])
                     .filter((t: any) => t.symbol === targetSymbol)
-                    .map((t: any) => ({
-                        time: new Date(t.entry_time).getTime() / 1000,
-                        side: t.side,
-                        entry: t.entry_price,
-                        sl: t.stop_loss || (t.side === 'LONG' ? t.entry_price * 0.99 : t.entry_price * 1.01),
-                        tp: t.take_profit || (t.side === 'LONG' ? t.entry_price * 1.15 : t.entry_price * 0.85),
-                        exit_time: t.exit_time ? new Date(t.exit_time).getTime() / 1000 : undefined,
-                        pnl: t.pnl,
-                        balance_after: t.balance_after
-                    }));
+                    .map((t: any) => {
+                        const entryStr = t.entry_time?.endsWith('Z') ? t.entry_time : `${t.entry_time}Z`;
+                        const exitStr = t.exit_time ? (t.exit_time.endsWith('Z') ? t.exit_time : `${t.exit_time}Z`) : undefined;
+                        return {
+                            time: new Date(entryStr).getTime() / 1000,
+                            side: t.side,
+                            entry: t.entry_price,
+                            sl: t.stop_loss || (t.side === 'LONG' ? t.entry_price * 0.99 : t.entry_price * 1.01),
+                            tp: t.take_profit || (t.side === 'LONG' ? t.entry_price * 1.15 : t.entry_price * 0.85),
+                            exit_time: exitStr ? new Date(exitStr).getTime() / 1000 : undefined,
+                            pnl: t.pnl,
+                            balance_after: t.balance_after
+                        };
+                    });
             } catch (err) {
                 console.error("Failed to fetch db trades", err);
             }
             
-            // Merge strategy trades and DB trades
-            const tradeMap = new Map<number, any>();
-            for (const t of strategyTrades) {
-                tradeMap.set(t.time, t);
+            // Merge strategy trades and DB trades smoothly without duplicates
+            const allTrades = [...strategyTrades];
+            for (const d of dbTrades) {
+                const maxDiff = symbol === 'SOLUSDT' ? 14400 : 300;
+                const idx = allTrades.findIndex(s => Math.abs(s.time - d.time) <= maxDiff && s.side === d.side);
+                if (idx !== -1) {
+                    allTrades[idx] = { ...allTrades[idx], ...d };
+                } else {
+                    allTrades.push(d);
+                }
             }
-            for (const t of dbTrades) {
-                tradeMap.set(t.time, t);
-            }
-            
-            const allTrades = Array.from(tradeMap.values());
             allTrades.sort((a: any, b: any) => a.time - b.time);
             
             frontendCache[symbol] = allTrades;
@@ -201,7 +201,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     };
 
     const renderBacktest = (trades: any[], shouldPan: boolean = true) => {
-        setBacktestTrades(trades);
         zonesPrimitiveRef.current?.setTrades(trades);
         if (seriesRef.current && trades.length > 0) {
             const firstCandleTime = candleDataRef.current.length > 0 ? candleDataRef.current[0].time : 0;
@@ -216,9 +215,9 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             }));
             
             if (!markersPrimitiveRef.current) {
-                markersPrimitiveRef.current = createSeriesMarkers(seriesRef.current, markers);
+                markersPrimitiveRef.current = createSeriesMarkers(seriesRef.current, markers as any);
             } else {
-                markersPrimitiveRef.current.setMarkers(markers);
+                markersPrimitiveRef.current.setMarkers(markers as any);
             }
             
             if (shouldPan) {
@@ -241,7 +240,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const handleTradeClick = async (trade: any) => {
         if (!chartRef.current) return;
         
-        setActiveTradeId(trade.time);
         activeTradeRef.current = trade;
         
         // Ensure data is loaded
@@ -301,7 +299,6 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         isFetchingRef.current = false;
         
         if (!frontendCache[symbol]) {
-             setBacktestTrades([]);
              // Only show the loading screen if we actually need to fetch it
              setIsBacktestLoading(true);
         }

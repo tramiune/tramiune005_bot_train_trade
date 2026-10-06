@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import ChartWidget from './components/ChartWidget';
 import ControlPanel from './components/ControlPanel';
 import TradeHistory from './components/TradeHistory';
