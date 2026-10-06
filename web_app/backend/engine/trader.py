@@ -115,7 +115,9 @@ class TradingEngine:
             current_risk_pct = 10.0
 
         total_balance = await self.exchange.get_balance('USDT')
-        virtual_balance = max(1.0, (total_balance * (alloc_pct / 100.0)) + cum_pnl)
+        # SỬA LỖI ĐẾM KÉP PNL: total_balance đã bao gồm tiền lãi/lỗ thật trên sàn. 
+        # Không được cộng thêm cum_pnl (trong DB) vào nữa.
+        virtual_balance = max(1.0, total_balance * (alloc_pct / 100.0))
         risk_amount = virtual_balance * (current_risk_pct / 100)
         
         if risk_per_coin <= 0:
@@ -368,15 +370,19 @@ class TradingEngine:
                     trade.status = "CLOSED"
                     trade.exit_time = datetime.now()
                     try:
-                        user_trades = await self.exchange.exchange.fapiPrivateGetUserTrades({'symbol': symbol_raw, 'limit': 5})
-                        recent_pnl = sum(float(t.get('realizedPnl', 0)) - float(t.get('commission', 0)) for t in user_trades[-2:])
+                        # Điểm 4: Sửa lỗi tính PnL ngây thơ (partial fills)
+                        entry_ts_ms = int(trade.entry_time.timestamp() * 1000) - 5000
+                        user_trades = await self.exchange.exchange.fapiPrivateGetUserTrades({'symbol': symbol_raw, 'limit': 30})
+                        valid_trades = [t for t in user_trades if t.get('time', 0) >= entry_ts_ms]
+                        
+                        recent_pnl = sum(float(t.get('realizedPnl', 0)) - float(t.get('commission', 0)) for t in valid_trades)
                         trade.pnl = round(recent_pnl, 4)
                         v_wallet = db.query(VirtualWallet).filter_by(strategy=trade.strategy).first()
                         if v_wallet:
                             v_wallet.realized_pnl = round(v_wallet.realized_pnl + trade.pnl, 4)
-                            self.log(f"[{trade.symbol}] Cập nhật ví ảo {trade.strategy}: PnL {trade.pnl:+.4f} USDT | Tổng PnL: {v_wallet.realized_pnl:+.4f} USDT")
-                    except Exception:
-                        pass
+                            self.log(f"[{trade.symbol}] Cập nhật ví ảo {trade.strategy}: PnL {trade.pnl:+.4f} USDT | Tổng PnL: {v_wallet.realized_pnl:+.4f} USDT (Tính từ {len(valid_trades)} lần khớp lệnh)")
+                    except Exception as e:
+                        self.log(f"[{trade.symbol}] Lỗi tính PnL: {e}", "ERROR")
 
         db.commit()
         db.close()
