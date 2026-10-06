@@ -5,7 +5,7 @@ import TradeHistory from './components/TradeHistory';
 import { Activity } from 'lucide-react';
 
 function App() {
-  const [activeTab, setActiveTab] = useState('DOGEUSDT');
+  const [activeTab, setActiveTab] = useState('XRPUSDT');
   const [focusedTrade, setFocusedTrade] = useState<any>(null);
 
   return (
@@ -19,7 +19,7 @@ function App() {
             <h1 className="text-2xl font-bold text-white tracking-wide">Quant Command Center</h1>
           </div>
           <div className="text-sm font-mono text-gray-500">
-            v1.0.0 | DOGE Degen Mode Ready
+            v1.0.0 | Quant Multi-Bot
           </div>
         </header>
 
@@ -28,7 +28,7 @@ function App() {
           
           <div className="space-y-4">
             <div className="flex space-x-2">
-              {['DOGEUSDT'].map((tab) => (
+              {['XRPUSDT', 'SOLUSDT'].map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -38,7 +38,7 @@ function App() {
                       : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
                   }`}
                 >
-                  {tab.replace('USDT', '')}
+                  {tab === 'XRPUSDT' ? 'XRP (5m Bắt Đáy)' : 'SOL (4H Cưỡi Sóng)'}
                 </button>
               ))}
             </div>

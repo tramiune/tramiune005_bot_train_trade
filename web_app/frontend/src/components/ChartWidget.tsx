@@ -13,6 +13,13 @@ interface ChartWidgetProps {
 
 const frontendCache: Record<string, any[]> = {};
 
+const getInterval = (sym: string) => {
+    if (sym === 'XRPUSDT') return '5m';
+    if (sym === 'SOLUSDT') return '4h';
+    if (sym === 'DOGEUSDT') return '3m';
+    return '1h';
+};
+
 const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
@@ -75,7 +82,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         isFetchingRef.current = true;
         
         try {
-            let url = `http://${window.location.hostname}:8000/api/klines?symbol=${symbol}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000`;
+            let url = `/api/klines?symbol=${symbol}&interval=${getInterval(symbol)}&limit=1000`;
             if (endTime) {
                 url += `&endTime=${endTime * 1000}`;
             }
@@ -142,7 +149,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
             setIsBacktestLoading(true);
         }
         try {
-            const url = `http://${window.location.hostname}:8000/api/trades`;
+            const url = `/api/trades`;
             const res = await axios.get(url);
             
             // Filter by symbol
@@ -222,7 +229,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         if (earliestTimeRef.current && trade.time < earliestTimeRef.current) {
             try {
                 const endTimestamp = (trade.exit_time || trade.time) + (24 * 3600);
-                const url = `http://${window.location.hostname}:8000/api/klines?symbol=${symbol.replace('/', '')}&interval=${symbol === 'DOGEUSDT' ? '3m' : '1h'}&limit=1000&endTime=${endTimestamp * 1000}`;
+                const url = `/api/klines?symbol=${symbol.replace('/', '')}&interval=${getInterval(symbol)}&limit=1000&endTime=${endTimestamp * 1000}`;
                 const res = await axios.get(url);
                 const formatted = res.data.data ? res.data.data : res.data;
                 const newData = [...formatted, ...candleDataRef.current];
@@ -250,7 +257,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         }
         
         
-        const padding = symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600;
+        const padding = symbol === "XRPUSDT" ? 3600 : (symbol === "DOGEUSDT" ? 2 * 3600 : 72 * 3600);
         const endTime = trade.exit_time || (candleDataRef.current.length > 0 ? candleDataRef.current[candleDataRef.current.length - 1].time : trade.time + 3600);
         
         // Entry/SL/TP zones of ALL trades are painted by TradeZonesPrimitive; here we only highlight the selected one
@@ -423,7 +430,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         <div className="w-full flex flex-col space-y-4">
             <div className="w-full bg-[#1E222D] rounded-lg overflow-hidden border border-gray-700 shadow-lg flex flex-col relative">
                 <div className="p-4 border-b border-gray-700 flex justify-between items-center">
-                    <h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - {symbol === 'DOGEUSDT' ? '3m (DEGEN MODE)' : '1H'}</h3>
+                    <h3 className="text-white font-semibold text-lg">{symbol.toUpperCase()} - {symbol === 'XRPUSDT' ? '5m (BẮT ĐÁY)' : (symbol === 'SOLUSDT' ? '4H (CƯỠI SÓNG)' : (symbol === 'DOGEUSDT' ? '3m' : '1H'))}</h3>
                     <span className={`flex items-center text-xs ${lastUpdate && (new Date().getTime() - lastUpdate.getTime() < 10000) ? 'text-green-400' : 'text-orange-400'}`}>
                         <span className={`w-2 h-2 rounded-full mr-2 ${lastUpdate && (new Date().getTime() - lastUpdate.getTime() < 10000) ? 'bg-green-400 animate-pulse' : 'bg-orange-400'}`}></span>
                         {lastUpdate ? `Last tick: ${lastUpdate.toLocaleTimeString()}` : 'Connecting...'}
