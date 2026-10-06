@@ -122,3 +122,114 @@ export function calculateKC(data: any[], period: number = 20, mult: number = 1.5
     
     return { upper, lower, mid: sma };
 }
+
+export function calculateNadarayaWatson(data: any[], h: number = 8.0, mult: number = 3.0) {
+    if (data.length < 500) return { upper: [], lower: [], baseline: [] };
+    
+    const n = data.length;
+    const windowSize = 500;
+    const weights = new Float64Array(windowSize);
+    let weightSum = 0;
+    const twoH2 = 2 * h * h;
+    for (let k = 0; k < windowSize; k++) {
+        weights[k] = Math.exp(-(k * k) / twoH2);
+        weightSum += weights[k];
+    }
+    
+    const out = new Float64Array(n);
+    const absDiff = new Float64Array(n);
+    
+    for (let i = 0; i < n; i++) {
+        let sum = 0;
+        let wSum = 0;
+        const maxK = Math.min(i, windowSize - 1);
+        for (let k = 0; k <= maxK; k++) {
+            sum += data[i - k].close * weights[k];
+            wSum += weights[k];
+        }
+        out[i] = sum / wSum;
+        absDiff[i] = Math.abs(data[i].close - out[i]);
+    }
+    
+    const upper: any[] = [];
+    const lower: any[] = [];
+    const baseline: any[] = [];
+    
+    let rollingDiffSum = 0;
+    for (let i = 0; i < 499 && i < n; i++) {
+        rollingDiffSum += absDiff[i];
+    }
+    
+    for (let i = 499; i < n; i++) {
+        rollingDiffSum += absDiff[i] - absDiff[i - 499];
+        const mae = (rollingDiffSum / 499) * mult;
+        const time = data[i].time;
+        baseline.push({ time, value: out[i] });
+        upper.push({ time, value: out[i] + mae });
+        lower.push({ time, value: out[i] - mae });
+    }
+    
+    return { upper, lower, baseline };
+}
+
+export function calculateSupertrend(data: any[], period: number = 17, mult: number = 4.4) {
+    if (data.length < period + 2) return { supertrend: [] };
+    
+    const n = data.length;
+    const tr = new Float64Array(n);
+    tr[0] = data[0].high - data[0].low;
+    for (let i = 1; i < n; i++) {
+        const hl = data[i].high - data[i].low;
+        const hc = Math.abs(data[i].high - data[i - 1].close);
+        const lc = Math.abs(data[i].low - data[i - 1].close);
+        tr[i] = Math.max(hl, hc, lc);
+    }
+    
+    const atr = new Float64Array(n);
+    atr[0] = tr[0];
+    for (let i = 1; i < n; i++) {
+        atr[i] = (atr[i - 1] * (period - 1) + tr[i]) / period;
+    }
+    
+    const finalUb = new Float64Array(n);
+    const finalLb = new Float64Array(n);
+    const trend = new Int8Array(n);
+    trend.fill(1);
+    
+    for (let i = 1; i < n; i++) {
+        const hl2 = (data[i].high + data[i].low) / 2;
+        const basicUb = hl2 + mult * atr[i];
+        const basicLb = hl2 - mult * atr[i];
+        
+        if (basicUb < finalUb[i - 1] || data[i - 1].close > finalUb[i - 1]) {
+            finalUb[i] = basicUb;
+        } else {
+            finalUb[i] = finalUb[i - 1];
+        }
+        
+        if (basicLb > finalLb[i - 1] || data[i - 1].close < finalLb[i - 1]) {
+            finalLb[i] = basicLb;
+        } else {
+            finalLb[i] = finalLb[i - 1];
+        }
+        
+        if (trend[i - 1] === 1 && data[i].close < finalLb[i]) {
+            trend[i] = -1;
+        } else if (trend[i - 1] === -1 && data[i].close > finalUb[i]) {
+            trend[i] = 1;
+        } else {
+            trend[i] = trend[i - 1];
+        }
+    }
+    
+    const supertrend: any[] = [];
+    for (let i = period; i < n; i++) {
+        supertrend.push({
+            time: data[i].time,
+            value: trend[i] === 1 ? finalLb[i] : finalUb[i],
+            color: trend[i] === 1 ? '#22c55e' : '#ef4444'
+        });
+    }
+    
+    return { supertrend };
+}

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createChart, ColorType, CandlestickSeries, createSeriesMarkers, BaselineSeries, LineSeries } from 'lightweight-charts';
 import type { IChartApi, ISeriesApi, LogicalRange, IPriceLine } from 'lightweight-charts';
-import { calculateBB, calculateKC } from '../utils/indicators';
+import { calculateNadarayaWatson, calculateSupertrend } from '../utils/indicators';
 import { TradeZonesPrimitive } from '../utils/tradeZones';
 import axios from 'axios';
 import { Loader2, ArrowRightToLine } from 'lucide-react';
@@ -24,11 +24,12 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const chartContainerRef = useRef<HTMLDivElement>(null);
     const chartRef = useRef<IChartApi | null>(null);
     const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
-    const bbUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-    const bbLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-    const kcUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-    const kcLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
-    const midSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    
+    // Strategy indicators (Nadaraya-Watson for XRP, Supertrend for SOL)
+    const nwUpperSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const nwLowerSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const nwBaseSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
+    const stSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
     
     // Price line references (changed to series references)
     const tpSeriesRef = useRef<any>(null);
@@ -47,6 +48,29 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
     const [isBacktestLoading, setIsBacktestLoading] = useState<boolean>(true);
     const [activeTradeId, setActiveTradeId] = useState<number | null>(null);
     const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
+
+    const updateStrategyIndicators = (candles: any[]) => {
+        if (!candles || candles.length === 0) return;
+        
+        if (symbol === 'XRPUSDT') {
+            const nw = calculateNadarayaWatson(candles, 8.0, 3.0);
+            if (nwUpperSeriesRef.current) nwUpperSeriesRef.current.setData(nw.upper);
+            if (nwLowerSeriesRef.current) nwLowerSeriesRef.current.setData(nw.lower);
+            if (nwBaseSeriesRef.current) nwBaseSeriesRef.current.setData(nw.baseline);
+            if (stSeriesRef.current) stSeriesRef.current.setData([]);
+        } else if (symbol === 'SOLUSDT') {
+            const st = calculateSupertrend(candles, 17, 4.4);
+            if (stSeriesRef.current) stSeriesRef.current.setData(st.supertrend);
+            if (nwUpperSeriesRef.current) nwUpperSeriesRef.current.setData([]);
+            if (nwLowerSeriesRef.current) nwLowerSeriesRef.current.setData([]);
+            if (nwBaseSeriesRef.current) nwBaseSeriesRef.current.setData([]);
+        } else {
+            if (nwUpperSeriesRef.current) nwUpperSeriesRef.current.setData([]);
+            if (nwLowerSeriesRef.current) nwLowerSeriesRef.current.setData([]);
+            if (nwBaseSeriesRef.current) nwBaseSeriesRef.current.setData([]);
+            if (stSeriesRef.current) stSeriesRef.current.setData([]);
+        }
+    };
 
     
     const reapplyMarkersAndLines = () => {
@@ -105,13 +129,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 candleDataRef.current = uniqueData;
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
-                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
-                    const kcData = calculateKC(candleDataRef.current, 20, 1.5);
-                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
-                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
-                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
-                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
-                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
+                    updateStrategyIndicators(candleDataRef.current);
                     if (frontendCache[symbol]) renderBacktest(frontendCache[symbol], false);
                     reapplyMarkersAndLines();
                 }
@@ -120,13 +138,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 if (seriesRef.current) {
                     seriesRef.current.setData(candleDataRef.current);
                     setLastUpdate(new Date());
-                    const bbData = calculateBB(candleDataRef.current, 20, 2.0);
-                    const kcData = calculateKC(candleDataRef.current, 20, 1.5);
-                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
-                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
-                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
-                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
-                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
+                    updateStrategyIndicators(candleDataRef.current);
                 }
             }
             
@@ -241,13 +253,7 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
                 if (seriesRef.current) {
                     seriesRef.current.setData(uniqueData);
                     setLastUpdate(new Date());
-                    const bbData = calculateBB(uniqueData, 20, 2.0);
-                    const kcData = calculateKC(uniqueData, 20, 1.5);
-                    if (bbUpperSeriesRef.current) bbUpperSeriesRef.current.setData(bbData.upper);
-                    if (bbLowerSeriesRef.current) bbLowerSeriesRef.current.setData(bbData.lower);
-                    if (kcUpperSeriesRef.current) kcUpperSeriesRef.current.setData(kcData.upper);
-                    if (kcLowerSeriesRef.current) kcLowerSeriesRef.current.setData(kcData.lower);
-                    if (midSeriesRef.current) midSeriesRef.current.setData(bbData.mid);
+                    updateStrategyIndicators(uniqueData);
                     if (frontendCache[symbol]) renderBacktest(frontendCache[symbol], false);
                     reapplyMarkersAndLines();
                 }
@@ -355,23 +361,47 @@ const ChartWidget: React.FC<ChartWidgetProps> = ({ symbol, focusedTrade }) => {
         candlestickSeries.attachPrimitive(zonesPrimitive);
         zonesPrimitiveRef.current = zonesPrimitive;
 
-        // Keltner Channel
-        const kcUpper = chart.addSeries(LineSeries, { color: 'rgba(255, 152, 0, 0.4)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-        kcUpperSeriesRef.current = kcUpper;
+        // Strategy Indicator: Nadaraya-Watson Envelope (XRP)
+        const nwUpper = chart.addSeries(LineSeries, {
+            color: '#f43f5e',
+            lineWidth: 2,
+            crosshairMarkerVisible: true,
+            lastValueVisible: true,
+            priceLineVisible: false,
+            title: 'NW Upper'
+        });
+        nwUpperSeriesRef.current = nwUpper;
         
-        const kcLower = chart.addSeries(LineSeries, { color: 'rgba(255, 152, 0, 0.4)', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-        kcLowerSeriesRef.current = kcLower;
+        const nwLower = chart.addSeries(LineSeries, {
+            color: '#10b981',
+            lineWidth: 2,
+            crosshairMarkerVisible: true,
+            lastValueVisible: true,
+            priceLineVisible: false,
+            title: 'NW Lower'
+        });
+        nwLowerSeriesRef.current = nwLower;
         
-        // Bollinger Bands
-        const bbUpper = chart.addSeries(LineSeries, { color: 'rgba(33, 150, 243, 0.8)', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-        bbUpperSeriesRef.current = bbUpper;
+        const nwBase = chart.addSeries(LineSeries, {
+            color: 'rgba(148, 163, 184, 0.4)',
+            lineWidth: 1,
+            lineStyle: 2,
+            crosshairMarkerVisible: false,
+            lastValueVisible: false,
+            priceLineVisible: false,
+            title: 'NW Base'
+        });
+        nwBaseSeriesRef.current = nwBase;
         
-        const bbLower = chart.addSeries(LineSeries, { color: 'rgba(33, 150, 243, 0.8)', lineWidth: 2, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-        bbLowerSeriesRef.current = bbLower;
-        
-        // Mid Line (SMA 20)
-        const mid = chart.addSeries(LineSeries, { color: 'rgba(255, 255, 255, 0.5)', lineWidth: 1, crosshairMarkerVisible: false, lastValueVisible: false, priceLineVisible: false });
-        midSeriesRef.current = mid;
+        // Strategy Indicator: Supertrend Line (SOL)
+        const stSeries = chart.addSeries(LineSeries, {
+            lineWidth: 2,
+            crosshairMarkerVisible: true,
+            lastValueVisible: true,
+            priceLineVisible: false,
+            title: 'Supertrend'
+        });
+        stSeriesRef.current = stSeries;
         
         
         
