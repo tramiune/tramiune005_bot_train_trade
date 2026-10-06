@@ -85,14 +85,18 @@ async def stop_bot():
     return {"status": "STOPPED"}
 
 from pydantic import BaseModel
+from typing import Optional
+
 class TestOrderRequest(BaseModel):
-    entry_price: float
-    side: str
+    entry_price: Optional[float] = None
+    side: Optional[str] = "LONG"
 
 @app.post("/api/test_order")
-async def test_order(req: TestOrderRequest):
+async def test_order(req: Optional[TestOrderRequest] = None):
     try:
-        return await trader_instance.execute_test_trade(req.entry_price, req.side)
+        side = req.side if req and req.side else "LONG"
+        price = req.entry_price if req and req.entry_price and req.entry_price > 0 else None
+        return await trader_instance.execute_test_trade(price, side)
     except Exception as e:
         return {"status": "error", "message": str(e)}
 

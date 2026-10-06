@@ -34,84 +34,47 @@ class TradingEngine:
         return configs
         
 
-    async def execute_test_trade(self, entry_price: float, side: str = 'LONG'):
-        symbol = "DOGE/USDT"
-        strategy = "DOGE_3M_DEGEN"
+    async def execute_test_trade(self, entry_price: float = None, side: str = 'LONG'):
+        import os
+        bot_mode = os.getenv("BOT_MODE", "XRP")
+        symbol = "XRP/USDT" if bot_mode == "XRP" else "SOL/USDT"
+        strategy = bot_mode
+        interval = "5m" if bot_mode == "XRP" else "4h"
         
-        if side == 'LONG':
-            sl_price = entry_price * (1 - 0.15)
-            tp_price = entry_price * (1 + 0.05)
-        else:
-            sl_price = entry_price * (1 + 0.15)
-            tp_price = entry_price * (1 - 0.05)
+        # 1. Fetch real market candle data
+        data = await self.exchange.fetch_ohlcv(symbol, interval, 250)
+        if not data or len(data) < 2:
+            return {"status": "error", "message": f"Không thể lấy dữ liệu nến {symbol} từ sàn"}
             
-        # Fetch Settings from DB
-        from models import Settings
-        from database import SessionLocal
+        df = pd.DataFrame(data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        
+        # 2. Determine entry price: if None or <= 0, use current live market price
+        if not entry_price or entry_price <= 0:
+            ticker = await self.exchange.exchange.fetch_ticker(symbol)
+            entry_price = float(ticker['last'])
+            
+        # Ensure df["close"].iloc[-2] is the exact entry price
+        df.iloc[-2, df.columns.get_loc('close')] = entry_price
+        
+        # 3. Read configured risk from DB
         db = SessionLocal()
         settings = db.query(Settings).first()
         db.close()
+        configured_risk = float(settings.risk_pct) if settings and settings.risk_pct is not None else 10.0
         
-        current_risk_pct = settings.risk_pct if settings else 30.0
-
-        # Calculate size based on risk
-        balance = await self.exchange.get_balance('USDT')
-        risk_amount = balance * (current_risk_pct / 100)
-        risk_per_coin = abs(entry_price - sl_price)
+        self.log(f"[{symbol}] Kích hoạt lệnh TEST THỦ CÔNG {side} tại giá {entry_price} (Risk: {configured_risk}%)...")
         
-        if risk_per_coin <= 0:
-            return {"status": "error", "message": f"[{symbol}] Invalid risk per coin: {risk_per_coin}"}
-            
-        position_size = risk_amount / risk_per_coin
-        notional_value = position_size * entry_price
-        
-        required_leverage = int(notional_value / balance) + 1
-        required_leverage = max(1, min(required_leverage, 50))
-        
-        self.log(f"[{symbol}] TEST Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size} (Leverage: {required_leverage}x)")
-        
-        if self.exchange.api_key and self.exchange.secret_key:
-            # CANCEL ALL EXISTING ORDERS FOR THIS SYMBOL BEFORE TESTING
-            try:
-                await self.exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
-                await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
-            except Exception:
-                pass
-                
-            try:
-                await self.exchange.exchange.fapiPrivatePostMarginType({
-                    'symbol': symbol.replace('/', ''),
-                    'marginType': 'CROSSED'
-                })
-            except Exception as e:
-                pass
-                
-            try:
-                await self.exchange.exchange.fapiPrivatePostLeverage({
-                    'symbol': symbol.replace('/', ''),
-                    'leverage': required_leverage
-                })
-            except Exception as e:
-                self.log(f"[{symbol}] Failed to set leverage: {e}", "WARNING")
-                
-            await self.exchange.execute_full_trade(symbol, 'buy' if side == 'LONG' else 'sell', position_size, entry_price, sl_price, tp_price)
-            
-            # Send Telegram Notification (HTML parse mode, same as real signals)
-            msg = (
-                f"🧪 <b>TEST: {strategy} SIGNAL</b>\n\n"
-                f"<b>Pair:</b> {symbol}\n"
-                f"<b>Side:</b> {side}\n"
-                f"<b>Entry:</b> {entry_price:.5f}\n"
-                f"<b>Stop Loss:</b> {sl_price:.5f}\n"
-                f"<b>Take Profit:</b> {tp_price:.5f}\n"
-                f"<b>Size:</b> {position_size:.1f}\n"
-                f"<b>Leverage:</b> {required_leverage}x\n"
-                f"<b>Risk:</b> {current_risk_pct}% (${risk_amount:.1f})"
-            )
-            await send_telegram_message(msg)
-            return {"status": "ok", "message": "Test lệnh đã được bắn lên Binance và Telegram!"}
-        else:
-            return {"status": "error", "message": "Không tìm thấy API Keys!"}
+        # 4. Execute through the EXACT SAME pipeline as live signal
+        await self.execute_trade(
+            symbol=symbol,
+            strategy=strategy,
+            risk_pct=configured_risk,
+            df=df,
+            target_rr=1.0,
+            side=side,
+            tag=" (🧪 Test Khởi Chạy Thủ Công)"
+        )
+        return {"status": "ok", "message": f"Đã bắn lệnh test {side} {symbol} tại giá {entry_price:.4f} lên Binance & Telegram!"}
 
     async def execute_trade(self, symbol: str, strategy: str, risk_pct: float, df: pd.DataFrame, target_rr: float, side: str = 'LONG', tag: str = "", entry_time=None):
         entry_price = float(df["close"].iloc[-2])

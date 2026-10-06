@@ -80,14 +80,12 @@ const ControlPanel: React.FC = () => {
     };
 
     const testOrder = async () => {
-        const entry = prompt("Nhập giá Entry (Limit Price) để test lệnh (VD: 0.0925):");
-        if (!entry) return;
-        const side = confirm("Bạn muốn bắn lệnh LONG? (Nhấn OK để chọn LONG, Cancel để chọn SHORT)") ? "LONG" : "SHORT";
+        if (!confirm('Kích hoạt bắn 1 tín hiệu LONG thử nghiệm tại giá thị trường hiện tại (vận hành đầy đủ y hệt tín hiệu thật)?')) return;
         
         setIsTesting(true);
         try {
-            const res = await axios.post(`/api/test_order`, { entry_price: parseFloat(entry), side: side });
-            alert(res.data.message || 'Lệnh Test đã được gửi!');
+            const res = await axios.post(`/api/test_order`, { side: 'LONG' });
+            alert(res.data.message || 'Lệnh Test LONG đã được bắn lên Binance & Telegram thành công!');
         } catch (error: any) {
             alert('Lỗi Test Order: ' + (error.response?.data?.detail || error.message));
         } finally {
