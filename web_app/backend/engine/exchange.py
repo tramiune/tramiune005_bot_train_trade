@@ -105,14 +105,14 @@ class BinanceFutures:
             formatted_tp = float(self.exchange.price_to_precision(symbol, tp_price)) if tp_price > 0 else 0.0
             formatted_entry = float(self.exchange.price_to_precision(symbol, entry_price))
             
-            # 2. MARKET Entry Order (Sửa lỗi kẹt lệnh Limit)
-            print(f"Placing ENTRY Market {side} for {formatted_amount} {symbol}")
+            # 2. Limit Entry Order (Exact as DOGE)
+            print(f"Placing ENTRY Limit {side} for {formatted_amount} {symbol} at {formatted_entry}")
             
             entry_params = {}
             if self.is_hedge_mode:
                 entry_params['positionSide'] = 'LONG' if side == 'buy' else 'SHORT'
                 
-            entry_order = await self.exchange.create_order(symbol, 'market', side, formatted_amount, params=entry_params)
+            entry_order = await self.exchange.create_order(symbol, 'limit', side, formatted_amount, formatted_entry, params=entry_params)
             
             # 3. Determine opposite side for SL/TP
             close_side = 'sell' if side == 'buy' else 'buy'
