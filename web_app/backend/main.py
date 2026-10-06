@@ -99,15 +99,35 @@ async def test_order(req: TestOrderRequest):
 @app.post("/api/cancel_orders")
 async def cancel_orders():
     from engine.exchange import BinanceFutures
+    import os
     exchange = BinanceFutures()
     try:
-        symbol = 'DOGE/USDT'
-        await exchange.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol.replace('/', '')})
+        bot_mode = os.getenv("BOT_MODE", "XRP")
+        symbol = "XRP/USDT" if bot_mode == "XRP" else "SOL/USDT"
+        symbol_raw = symbol.replace('/', '')
+        
+        # 1. Close open position & cancel all resting orders
+        await exchange.close_position(symbol)
+        
+        # 2. Also ensure all algo orders are cancelled
         try:
-            await exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol.replace('/', '')})
+            await exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol_raw})
         except Exception:
             pass
-        return {"status": "ok", "message": "Đã hủy toàn bộ lệnh treo trên Binance!"}
+            
+        # 3. Mark DB trades as CLOSED
+        from database import SessionLocal
+        from models import Trade
+        from datetime import datetime
+        db = SessionLocal()
+        open_trades = db.query(Trade).filter(Trade.symbol == symbol, Trade.status == "OPEN").all()
+        for t in open_trades:
+            t.status = "CLOSED"
+            t.exit_time = datetime.now()
+        db.commit()
+        db.close()
+        
+        return {"status": "ok", "message": f"Đã đóng vị thế và hủy toàn bộ lệnh {symbol} trên Binance!"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
     finally:

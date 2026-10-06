@@ -56,7 +56,13 @@ class BinanceFutures:
         try:
             await self.load_markets()
             symbol_raw = symbol.replace('/', '')
-            
+            if self.is_hedge_mode is None:
+                try:
+                    res = await self.exchange.fapiPrivateGetPositionSideDual()
+                    self.is_hedge_mode = res.get('dualSidePosition', False)
+                except Exception:
+                    self.is_hedge_mode = False
+                    
             # 1. Cancel all resting orders
             try:
                 await self.exchange.fapiPrivateDeleteAllOpenOrders({'symbol': symbol_raw})
