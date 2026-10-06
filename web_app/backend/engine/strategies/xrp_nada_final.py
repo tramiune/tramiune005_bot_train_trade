@@ -14,13 +14,14 @@ def pine_rsi(src: pd.Series, n: int) -> pd.Series:
         out[i] = 100 if ad == 0 else 100 - 100 / (1 + au / ad)
     return pd.Series(out)
 
-def check_xrp_signal(df: pd.DataFrame) -> str:
+def check_xrp_signal(df: pd.DataFrame, return_details: bool = False):
     """
     XRP FINAL KING (Mean Reversion)
     Nadaraya-Watson (h=8.0, mult=3.0) + RSI < 20 / > 80 + Vol < 2.4x
     Requires at least 1000 candles (recommend 1500) to warm up 499-period MAE
     """
-    if len(df) < 1000: return "NONE"
+    if len(df) < 1000:
+        return ("NONE", {}) if return_details else "NONE"
     
     h_bw = 8.0
     mult = 3.0
@@ -43,19 +44,31 @@ def check_xrp_signal(df: pd.DataFrame) -> str:
     r = pine_rsi(df['close'], 14).to_numpy()
     
     # Vol Filter (Volume < SMA20 * 2.4)
-    high_vol = v > pd.Series(v).rolling(20).mean().to_numpy() * vol_mult
+    vol_sma = pd.Series(v).rolling(20).mean().to_numpy()
+    high_vol = v > vol_sma * vol_mult
+    vol_ratio = v / np.where(vol_sma == 0, 1, vol_sma)
     
     i = len(df) - 2 # Latest closed candle
     
+    details = {
+        'close': float(c[i]) if not np.isnan(c[i]) else 0.0,
+        'lower': float(lower[i]) if not np.isnan(lower[i]) else 0.0,
+        'upper': float(upper[i]) if not np.isnan(upper[i]) else 0.0,
+        'rsi': float(r[i]) if not np.isnan(r[i]) else 0.0,
+        'vol_ratio': float(vol_ratio[i]) if not np.isnan(vol_ratio[i]) else 0.0,
+    }
+    
     if np.isnan(lower[i]) or np.isnan(upper[i]) or np.isnan(r[i]):
-        return "NONE"
+        return ("NONE", details) if return_details else "NONE"
         
     cross_dn = (c[i] < lower[i]) and (c[i-1] >= lower[i-1])
     cross_up = (c[i] > upper[i]) and (c[i-1] <= upper[i-1])
     
+    signal = "NONE"
     if cross_dn and (r[i] < rsi_os) and not high_vol[i]:
-        return "LONG"
+        signal = "LONG"
     elif cross_up and (r[i] > rsi_ob) and not high_vol[i]:
-        return "SHORT"
+        signal = "SHORT"
         
-    return "NONE"
+    return (signal, details) if return_details else signal
+

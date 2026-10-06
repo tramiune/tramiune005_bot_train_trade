@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
 
-def check_sol_signal(df: pd.DataFrame) -> str:
+def check_sol_signal(df: pd.DataFrame, return_details: bool = False):
     """
     SOL CƯỠI SÓNG FINAL (Trend Following)
     Supertrend (17, 4.4)
     Returns: "LONG" or "SHORT" or "NONE"
     """
-    if len(df) < 50: return "NONE"
+    if len(df) < 50:
+        return ("NONE", {}) if return_details else "NONE"
     
     period = 17
     mult = 4.4
@@ -48,12 +49,18 @@ def check_sol_signal(df: pd.DataFrame) -> str:
         
     i = len(df) - 2
     
+    signal = "NONE"
     if trend[i] == 1 and trend[i-1] == -1:
-        return "LONG"
+        signal = "LONG"
     elif trend[i] == -1 and trend[i-1] == 1:
-        return "SHORT"
+        signal = "SHORT"
         
-    return "NONE"
+    details = {
+        'trend': 'LONG' if trend[i] == 1 else 'SHORT',
+        'close': float(c[i]),
+        'sl': float(final_lb[i] if trend[i] == 1 else final_ub[i])
+    }
+    return (signal, details) if return_details else signal
 
 def get_sol_sl_prices(df: pd.DataFrame):
     # Same calculation to return exact lb/ub for dynamic size calculation

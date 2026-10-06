@@ -380,8 +380,16 @@ class TradingEngine:
                 from engine.strategies.xrp_nada_final import check_xrp_signal
                 xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 1500)
                 xrp_df = pd.DataFrame(xrp_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                signal = check_xrp_signal(xrp_df)
+                signal, det = check_xrp_signal(xrp_df, return_details=True)
                 last_time = xrp_df["timestamp"].iloc[-2]
+                
+                # Chi tiết tính toán thực tế cho nến vừa đóng
+                c_p = det.get('close', 0.0)
+                low_b = det.get('lower', 0.0)
+                rsi_v = det.get('rsi', 0.0)
+                vr = det.get('vol_ratio', 0.0)
+                diff_pct = ((c_p - low_b) / c_p * 100) if c_p > 0 else 0.0
+                self.log(f"[XRP 5m] Close: {c_p:.4f} | Dải dưới NW: {low_b:.4f} (cách {diff_pct:+.2f}%) | RSI: {rsi_v:.1f} (cần <20) | Vol: {vr:.2f}x | Tín hiệu: {signal}")
                 
                 if signal in ["LONG", "SHORT"] and self.last_trade_time.get("XRP") != last_time:
                     self.last_trade_time["XRP"] = last_time
@@ -392,8 +400,13 @@ class TradingEngine:
                 from engine.strategies.sol_supertrend import check_sol_signal
                 sol_data = await self.exchange.fetch_ohlcv("SOL/USDT", '4h', 250)
                 sol_df = pd.DataFrame(sol_data, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
-                signal = check_sol_signal(sol_df)
+                signal, det = check_sol_signal(sol_df, return_details=True)
                 last_time = sol_df["timestamp"].iloc[-2]
+                
+                c_p = det.get('close', 0.0)
+                trend_cur = det.get('trend', 'UNKNOWN')
+                sl_p = det.get('sl', 0.0)
+                self.log(f"[SOL 4h] Close: {c_p:.2f} | Supertrend: {trend_cur} (SL: {sl_p:.2f}) | Tín hiệu đảo chiều: {signal}")
                 
                 if signal in ["LONG", "SHORT"] and self.last_trade_time.get("SOL") != last_time:
                     self.last_trade_time["SOL"] = last_time
