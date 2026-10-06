@@ -72,7 +72,8 @@ def get_system_stats():
 
 def get_pm2_stats():
     try:
-        out = subprocess.check_output("pm2 jlist", shell=True).decode()
+        cmd = "/usr/bin/pm2 jlist" if os.path.exists("/usr/bin/pm2") else "pm2 jlist"
+        out = subprocess.check_output(cmd, shell=True).decode()
         data = json.loads(out)
         res = {}
         for p in data:
