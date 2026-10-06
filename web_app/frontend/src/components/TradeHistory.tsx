@@ -1,16 +1,26 @@
 import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 
-const API_BASE = '/api';
+interface TradeHistoryProps {
+    onTradeClick?: (trade: any) => void;
+    focusedTrade?: any;
+    symbol?: string;
+}
 
-const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void, focusedTrade?: any}> = ({onTradeClick, focusedTrade}) => {
+const TradeHistory: React.FC<TradeHistoryProps> = ({ onTradeClick, focusedTrade, symbol = 'XRPUSDT' }) => {
     const [trades, setTrades] = useState<any[]>([]);
+    const isSol = symbol === 'SOLUSDT';
+    const apiBase = isSol ? '/api/sol' : '/api/xrp';
 
     useEffect(() => {
         const fetchTrades = async () => {
             try {
-                const res = await axios.get(`${API_BASE}/trades`);
-                setTrades(res.data);
+                const res = await axios.get(`${apiBase}/trades`);
+                const targetSymbol = symbol.replace('USDT', '/USDT');
+                const filtered = (res.data || []).filter((t: any) => 
+                    t.symbol && !t.symbol.includes('DOGE') && t.symbol === targetSymbol
+                );
+                setTrades(filtered);
             } catch (e) {
                 console.error("Failed to fetch trades", e);
             }
@@ -18,7 +28,7 @@ const TradeHistory: React.FC<{onTradeClick?: (trade: any) => void, focusedTrade?
         fetchTrades();
         const interval = setInterval(fetchTrades, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [symbol]);
 
     const wins = trades.filter(t => t.pnl && t.pnl > 0).length;
     const losses = trades.filter(t => t.pnl && t.pnl <= 0).length;

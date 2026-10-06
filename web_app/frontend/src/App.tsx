@@ -24,7 +24,7 @@ function App() {
         </header>
 
         <div className="space-y-6">
-          <ControlPanel />
+          <ControlPanel symbol={activeTab} />
           
           <div className="space-y-4">
             <div className="flex space-x-2">
@@ -50,7 +50,7 @@ function App() {
         </div>
 
         <div className="mt-8">
-          <TradeHistory onTradeClick={(trade: any) => setFocusedTrade(trade)} focusedTrade={focusedTrade} />
+          <TradeHistory onTradeClick={(trade: any) => setFocusedTrade(trade)} focusedTrade={focusedTrade} symbol={activeTab} />
         </div>
       </div>
     </div>

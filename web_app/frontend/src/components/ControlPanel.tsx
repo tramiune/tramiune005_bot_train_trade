@@ -2,10 +2,18 @@ import React, { useEffect, useState } from 'react';
 import { Play, Square, Activity, Settings } from 'lucide-react';
 import axios from 'axios';
 
-const ControlPanel: React.FC = () => {
+interface ControlPanelProps {
+    symbol: string;
+}
+
+const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
+    const isSol = symbol === 'SOLUSDT';
+    const apiBase = isSol ? '/api/sol' : '/api/xrp';
+    const coinLabel = isSol ? 'SOL' : 'XRP';
+
     const [status, setStatus] = useState<string>('UNKNOWN');
     const [balance, setBalance] = useState<number | null>(null);
-    const [riskPct, setRiskPct] = useState<number>(30);
+    const [riskPct, setRiskPct] = useState<number>(10);
     const [tgReady, setTgReady] = useState<boolean>(false);
     
     // UI states
@@ -20,15 +28,16 @@ const ControlPanel: React.FC = () => {
         
         const interval = setInterval(() => {
             fetchStatus();
+            fetchBalance();
         }, 5000);
         return () => clearInterval(interval);
-    }, []);
+    }, [symbol]);
 
     const fetchStatus = async () => {
         try {
             const [statusRes, tgRes] = await Promise.all([
-                axios.get(`/api/status`),
-                axios.get(`/api/telegram/status`)
+                axios.get(`${apiBase}/status`),
+                axios.get(`${apiBase}/telegram/status`)
             ]);
             setStatus(statusRes.data.status);
             setTgReady(tgRes.data.ready);
@@ -40,7 +49,7 @@ const ControlPanel: React.FC = () => {
 
     const fetchBalance = async () => {
         try {
-            const res = await axios.get(`/api/balance`);
+            const res = await axios.get(`${apiBase}/balance`);
             setBalance(res.data.balance);
         } catch (error) {
             console.error('Failed to fetch balance', error);
@@ -49,7 +58,7 @@ const ControlPanel: React.FC = () => {
 
     const fetchSettings = async () => {
         try {
-            const res = await axios.get(`/api/settings`);
+            const res = await axios.get(`${apiBase}/settings`);
             setRiskPct(res.data.risk_pct);
         } catch (error) {
             console.error('Failed to fetch settings', error);
@@ -59,8 +68,8 @@ const ControlPanel: React.FC = () => {
     const saveSettings = async () => {
         setIsSavingSettings(true);
         try {
-            await axios.post(`/api/settings`, { risk_pct: riskPct });
-            alert('Đã lưu cấu hình!');
+            await axios.post(`${apiBase}/settings`, { risk_pct: riskPct });
+            alert(`Đã lưu cấu hình rủi ro ${coinLabel}: ${riskPct}%!`);
         } catch (error) {
             console.error('Failed to save settings', error);
             alert('Lưu thất bại!');
@@ -70,22 +79,22 @@ const ControlPanel: React.FC = () => {
     };
 
     const startBot = async () => {
-        await axios.post(`/api/start`);
+        await axios.post(`${apiBase}/start`);
         fetchStatus();
     };
 
     const stopBot = async () => {
-        await axios.post(`/api/stop`);
+        await axios.post(`${apiBase}/stop`);
         fetchStatus();
     };
 
     const testOrder = async () => {
-        if (!confirm('Kích hoạt bắn 1 tín hiệu LONG thử nghiệm tại giá thị trường hiện tại (vận hành đầy đủ y hệt tín hiệu thật)?')) return;
+        if (!confirm(`Kích hoạt bắn 1 tín hiệu LONG ${coinLabel} thử nghiệm tại giá thị trường hiện tại (vận hành đầy đủ y hệt tín hiệu thật)?`)) return;
         
         setIsTesting(true);
         try {
-            const res = await axios.post(`/api/test_order`, { side: 'LONG' });
-            alert(res.data.message || 'Lệnh Test LONG đã được bắn lên Binance & Telegram thành công!');
+            const res = await axios.post(`${apiBase}/test_order`, { side: 'LONG' });
+            alert(res.data.message || `Lệnh Test LONG ${coinLabel} đã được bắn lên Binance & Telegram thành công!`);
         } catch (error: any) {
             alert('Lỗi Test Order: ' + (error.response?.data?.detail || error.message));
         } finally {
@@ -94,11 +103,11 @@ const ControlPanel: React.FC = () => {
     };
 
     const cancelOrders = async () => {
-        if (!confirm('Huỷ TOÀN BỘ lệnh đang mở trên Binance?')) return;
+        if (!confirm(`Huỷ TOÀN BỘ vị thế & lệnh ${coinLabel} đang mở trên Binance?`)) return;
         setIsCanceling(true);
         try {
-            const res = await axios.post(`/api/cancel_orders`);
-            alert(res.data.message || 'Đã huỷ mọi lệnh!');
+            const res = await axios.post(`${apiBase}/cancel_orders`);
+            alert(res.data.message || `Đã huỷ mọi lệnh ${coinLabel}!`);
         } catch (error: any) {
             alert('Lỗi Huỷ lệnh: ' + (error.response?.data?.detail || error.message));
         } finally {
@@ -148,7 +157,7 @@ const ControlPanel: React.FC = () => {
             <div className="flex flex-col md:flex-row items-center space-y-3 md:space-y-0 md:space-x-4 w-full md:w-auto">
                 {/* Risk Setting */}
                 <div className="flex items-center bg-black/30 rounded-xl p-1.5 border border-white/5 shadow-inner w-full md:w-auto justify-between">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold px-2">Risk %</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold px-2">{coinLabel} Risk %</span>
                     <input 
                         type="number"
                         value={riskPct}
