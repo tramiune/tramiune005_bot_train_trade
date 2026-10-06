@@ -10,7 +10,7 @@ from engine.strategies.doge_3m_degen import check_doge_degen_signal, get_all_dog
 from engine.indicators import calculate_atr
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from models import Trade, BotConfig, SystemLog
+from models import Trade, BotConfig, SystemLog, Settings
 from engine.telegram import send_telegram_message
 
 
