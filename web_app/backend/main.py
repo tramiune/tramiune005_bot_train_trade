@@ -5,7 +5,7 @@ from fastapi import FastAPI, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from database import engine, Base, get_db
-from models import Trade, SystemLog, BotConfig, Settings
+from models import Trade, SystemLog, BotConfig, Settings, VirtualWallet
 from engine.trader import TradingEngine
 from contextlib import asynccontextmanager
 from fetch_more import fetch_lots_of_klines
@@ -135,12 +135,79 @@ async def cancel_orders():
     finally:
         await exchange.close()
 
-@app.get("/api/balance")
-async def get_balance():
+def get_or_create_wallet(strategy: str, db: Session) -> VirtualWallet:
+    wallet = db.query(VirtualWallet).filter_by(strategy=strategy).first()
+    if not wallet:
+        wallet = VirtualWallet(strategy=strategy, allocation_pct=50.0, realized_pnl=0.0)
+        db.add(wallet)
+        db.commit()
+        db.refresh(wallet)
+    return wallet
+
+class AllocationUpdate(BaseModel):
+    xrp_pct: float
+    sol_pct: float
+
+@app.get("/api/wallets")
+async def get_wallets(db: Session = Depends(get_db)):
     from engine.exchange import BinanceFutures
     import os
     
-    # Check if keys are empty strings
+    api_key = os.getenv("BINANCE_API_KEY", "")
+    secret = os.getenv("BINANCE_SECRET_KEY", "")
+    if not api_key or not secret:
+        return {"status": "keys_missing", "total_balance": 0.0, "total_free": 0.0, "wallets": {}}
+        
+    engine_exchange = BinanceFutures()
+    try:
+        balance_data = await engine_exchange.exchange.fetch_balance()
+        total_free = float(balance_data.get('USDT', {}).get('free', 0.0))
+        total_wallet = float(balance_data.get('USDT', {}).get('total', 0.0))
+        
+        w_xrp = get_or_create_wallet("XRP", db)
+        w_sol = get_or_create_wallet("SOL", db)
+        
+        xrp_balance = max(0.0, (total_free * (w_xrp.allocation_pct / 100.0)) + w_xrp.realized_pnl)
+        sol_balance = max(0.0, (total_free * (w_sol.allocation_pct / 100.0)) + w_sol.realized_pnl)
+        
+        return {
+            "status": "ok",
+            "total_balance": round(total_wallet, 2),
+            "total_free": round(total_free, 2),
+            "wallets": {
+                "XRP": {
+                    "strategy": "XRP",
+                    "allocation_pct": w_xrp.allocation_pct,
+                    "balance": round(xrp_balance, 2),
+                    "realized_pnl": round(w_xrp.realized_pnl, 4)
+                },
+                "SOL": {
+                    "strategy": "SOL",
+                    "allocation_pct": w_sol.allocation_pct,
+                    "balance": round(sol_balance, 2),
+                    "realized_pnl": round(w_sol.realized_pnl, 4)
+                }
+            }
+        }
+    except Exception as e:
+        return {"status": "error", "message": str(e), "total_balance": 0.0, "total_free": 0.0, "wallets": {}}
+    finally:
+        await engine_exchange.close()
+
+@app.post("/api/wallets/allocation")
+def update_allocation(data: AllocationUpdate, db: Session = Depends(get_db)):
+    w_xrp = get_or_create_wallet("XRP", db)
+    w_sol = get_or_create_wallet("SOL", db)
+    w_xrp.allocation_pct = data.xrp_pct
+    w_sol.allocation_pct = data.sol_pct
+    db.commit()
+    return {"status": "ok", "xrp_pct": data.xrp_pct, "sol_pct": data.sol_pct}
+
+@app.get("/api/balance")
+async def get_balance(db: Session = Depends(get_db)):
+    from engine.exchange import BinanceFutures
+    import os
+    
     api_key = os.getenv("BINANCE_API_KEY", "")
     secret = os.getenv("BINANCE_SECRET_KEY", "")
     if not api_key or not secret:
@@ -151,10 +218,23 @@ async def get_balance():
         if not engine_exchange.exchange.apiKey or not engine_exchange.exchange.secret:
             return {"balance": 0.0, "status": "keys_missing"}
         
-        balance = await engine_exchange.exchange.fetch_balance()
-        # USDT available balance in futures wallet
-        usdt_free = balance.get('USDT', {}).get('free', 0.0)
-        return {"balance": usdt_free, "status": "ok"}
+        balance_data = await engine_exchange.exchange.fetch_balance()
+        usdt_free = float(balance_data.get('USDT', {}).get('free', 0.0))
+        usdt_total = float(balance_data.get('USDT', {}).get('total', 0.0))
+        
+        bot_mode = os.getenv("BOT_MODE", "XRP")
+        wallet = get_or_create_wallet(bot_mode, db)
+        
+        virtual_balance = max(0.0, (usdt_free * (wallet.allocation_pct / 100.0)) + wallet.realized_pnl)
+        
+        return {
+            "balance": round(virtual_balance, 2),
+            "total_balance": round(usdt_total, 2),
+            "allocation_pct": wallet.allocation_pct,
+            "realized_pnl": round(wallet.realized_pnl, 4),
+            "strategy": bot_mode,
+            "status": "ok"
+        }
     except Exception as e:
         return {"balance": 0.0, "status": "error", "message": str(e)}
     finally:

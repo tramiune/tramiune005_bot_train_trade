@@ -41,3 +41,13 @@ class Settings(Base):
     id = Column(Integer, primary_key=True, index=True)
     risk_pct = Column(Float, default=30.0)
     leverage = Column(Integer, default=20)
+
+class VirtualWallet(Base):
+    __tablename__ = "virtual_wallets"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    strategy = Column(String, unique=True, index=True) # "XRP" or "SOL"
+    allocation_pct = Column(Float, default=50.0)
+    realized_pnl = Column(Float, default=0.0)
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+

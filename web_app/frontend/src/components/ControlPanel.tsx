@@ -13,6 +13,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
     const [status, setStatus] = useState<string>('UNKNOWN');
     const [balance, setBalance] = useState<number | null>(null);
     const [balanceStatus, setBalanceStatus] = useState<string>('ok');
+    const [allocPct, setAllocPct] = useState<number | null>(null);
+    const [totalWallet, setTotalWallet] = useState<number | null>(null);
     const [riskPct, setRiskPct] = useState<number>(10);
     const [tgReady, setTgReady] = useState<boolean>(false);
     
@@ -54,6 +56,8 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
             const res = await axios.get(`${apiBase}/balance`);
             setBalance(res.data.balance);
             setBalanceStatus(res.data.status || 'ok');
+            if (res.data.allocation_pct !== undefined) setAllocPct(res.data.allocation_pct);
+            if (res.data.total_balance !== undefined) setTotalWallet(res.data.total_balance);
         } catch (error) {
             console.error('Failed to fetch balance', error);
             setBalance(null);
@@ -140,14 +144,18 @@ const ControlPanel: React.FC<ControlPanelProps> = ({ symbol }) => {
                 <div className="h-8 w-px bg-white/10 hidden md:block"></div>
                 
                 <div className="flex flex-col items-center md:items-start">
-                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5">{coinLabel} Balance</span>
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest font-semibold mb-0.5">
+                        Ví Ảo {coinLabel} {allocPct !== null ? `(${allocPct}%)` : ''}
+                    </span>
                     <div className="flex items-center text-sm">
                         {balanceStatus === 'loading' ? (
                             <span className="text-gray-400 font-mono text-xs animate-pulse">Loading...</span>
                         ) : balanceStatus === 'keys_missing' ? (
                             <span className="text-amber-400/90 font-mono text-xs bg-amber-500/10 px-2 py-0.5 rounded border border-amber-500/30" title="Chưa nhập API Key cho bot này">Chưa có API Key</span>
                         ) : balance !== null ? (
-                            <span className="text-yellow-400 font-mono font-bold drop-shadow-md">${balance.toFixed(2)}</span>
+                            <span className="text-yellow-400 font-mono font-bold drop-shadow-md" title={`Tổng ví Binance: $${totalWallet?.toFixed(2) ?? '---'}`}>
+                                ${balance.toFixed(2)}
+                            </span>
                         ) : (
                             <span className="text-gray-500 font-mono text-xs">---</span>
                         )}

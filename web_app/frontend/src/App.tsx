@@ -2,6 +2,7 @@ import { useState } from 'react';
 import ChartWidget from './components/ChartWidget';
 import ControlPanel from './components/ControlPanel';
 import TradeHistory from './components/TradeHistory';
+import VirtualWalletBar from './components/VirtualWalletBar';
 import { Activity } from 'lucide-react';
 
 function App() {
@@ -19,11 +20,12 @@ function App() {
             <h1 className="text-2xl font-bold text-white tracking-wide">Quant Command Center</h1>
           </div>
           <div className="text-sm font-mono text-gray-500">
-            v1.0.0 | Quant Multi-Bot
+            v1.0.0 | Quant Multi-Bot (1 Nick Virtual Ledger)
           </div>
         </header>
 
         <div className="space-y-6">
+          <VirtualWalletBar activeSymbol={activeTab} onSelectSymbol={(sym) => setActiveTab(sym)} />
           <ControlPanel symbol={activeTab} />
           
           <div className="space-y-4">

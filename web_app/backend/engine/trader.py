@@ -10,7 +10,7 @@ from engine.strategies.doge_3m_degen import check_doge_degen_signal, get_all_dog
 from engine.indicators import calculate_atr
 from sqlalchemy.orm import Session
 from database import SessionLocal
-from models import Trade, BotConfig, SystemLog, Settings
+from models import Trade, BotConfig, SystemLog, Settings, VirtualWallet
 from engine.telegram import send_telegram_message
 
 
@@ -99,10 +99,14 @@ class TradingEngine:
             risk_per_coin = abs(entry_price - sl_price)
         else:
             return
-        # Fetch user-configured risk_pct from Settings
+        # Fetch user-configured risk_pct and Virtual Wallet allocation
         db = SessionLocal()
         settings = db.query(Settings).first()
+        v_wallet = db.query(VirtualWallet).filter_by(strategy=strategy).first()
+        alloc_pct = v_wallet.allocation_pct if v_wallet else 50.0
+        cum_pnl = v_wallet.realized_pnl if v_wallet else 0.0
         db.close()
+        
         if settings and settings.risk_pct is not None:
             current_risk_pct = float(settings.risk_pct)
         elif risk_pct is not None:
@@ -110,8 +114,9 @@ class TradingEngine:
         else:
             current_risk_pct = 10.0
 
-        balance = await self.exchange.get_balance('USDT')
-        risk_amount = balance * (current_risk_pct / 100)
+        total_balance = await self.exchange.get_balance('USDT')
+        virtual_balance = max(1.0, (total_balance * (alloc_pct / 100.0)) + cum_pnl)
+        risk_amount = virtual_balance * (current_risk_pct / 100)
         
         if risk_per_coin <= 0:
             self.log(f"[{symbol}] Invalid risk per coin: {risk_per_coin}", "ERROR")
@@ -121,10 +126,10 @@ class TradingEngine:
         notional_value = position_size * entry_price
         
         # Calculate leverage with a 35% buffer for Binance maintenance margin and trading fees
-        required_leverage = int(notional_value / (balance * 0.65)) + 1
+        required_leverage = int(notional_value / (virtual_balance * 0.65)) + 1
         required_leverage = max(1, min(required_leverage, 75))
         
-        self.log(f"[{symbol}] Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size} (Leverage: {required_leverage}x)")
+        self.log(f"[{symbol}] Signal detected! Executing {side}. Entry: {entry_price}, SL: {sl_price}, TP: {tp_price}, Size: {position_size:.4f} (Leverage: {required_leverage}x | Virtual Balance: ${virtual_balance:.2f} [{alloc_pct:.0f}%])")
         
         if self.exchange.api_key and self.exchange.secret_key:
             try:
@@ -336,6 +341,16 @@ class TradingEngine:
                     await self.exchange.exchange.fapiPrivateDeleteAlgoOpenOrders({'symbol': symbol_raw})
                 except:
                     pass
+                try:
+                    user_trades = await self.exchange.exchange.fapiPrivateGetUserTrades({'symbol': symbol_raw, 'limit': 5})
+                    recent_pnl = sum(float(t.get('realizedPnl', 0)) - float(t.get('commission', 0)) for t in user_trades[-2:])
+                    trade.pnl = round(recent_pnl, 4)
+                    v_wallet = db.query(VirtualWallet).filter_by(strategy=trade.strategy).first()
+                    if v_wallet:
+                        v_wallet.realized_pnl = round(v_wallet.realized_pnl + trade.pnl, 4)
+                        self.log(f"[{trade.symbol}] Cập nhật ví ảo {trade.strategy}: PnL {trade.pnl:+.4f} USDT | Tổng PnL: {v_wallet.realized_pnl:+.4f} USDT")
+                except Exception:
+                    pass
             
             # Nếu vị thế = 0 nhưng vẫn CÒN lệnh chờ (Ví dụ: cắn SL rồi nhưng lệnh TP vẫn còn treo)
             elif position_amt == 0 and len(orders_for_symbol) > 0:
@@ -352,6 +367,16 @@ class TradingEngine:
                         pass
                     trade.status = "CLOSED"
                     trade.exit_time = datetime.now()
+                    try:
+                        user_trades = await self.exchange.exchange.fapiPrivateGetUserTrades({'symbol': symbol_raw, 'limit': 5})
+                        recent_pnl = sum(float(t.get('realizedPnl', 0)) - float(t.get('commission', 0)) for t in user_trades[-2:])
+                        trade.pnl = round(recent_pnl, 4)
+                        v_wallet = db.query(VirtualWallet).filter_by(strategy=trade.strategy).first()
+                        if v_wallet:
+                            v_wallet.realized_pnl = round(v_wallet.realized_pnl + trade.pnl, 4)
+                            self.log(f"[{trade.symbol}] Cập nhật ví ảo {trade.strategy}: PnL {trade.pnl:+.4f} USDT | Tổng PnL: {v_wallet.realized_pnl:+.4f} USDT")
+                    except Exception:
+                        pass
 
         db.commit()
         db.close()
