@@ -108,7 +108,22 @@ async def check_bot_futures(symbol: str, bot_dir: str):
                     secret_key = line.strip().split("=", 1)[1].replace('"', '').replace("'", "")
 
     if not api_key:
-        return {"status": "NO_API_KEY", "balance": 0.0, "position": None, "orders": []}
+        return {"status": "NO_API_KEY", "balance": 0.0, "position": None, "orders": [], "risk_pct": 10.0}
+
+    db_file = os.path.join(bot_dir, "web_app/backend/trading_bot.db")
+    risk_pct = 10.0
+    if os.path.exists(db_file):
+        try:
+            import sqlite3
+            conn = sqlite3.connect(db_file)
+            cur = conn.cursor()
+            cur.execute("SELECT risk_pct FROM settings LIMIT 1;")
+            row = cur.fetchone()
+            if row and row[0] is not None:
+                risk_pct = float(row[0])
+            conn.close()
+        except Exception:
+            pass
 
     try:
         import ccxt.async_support as ccxt_async
@@ -147,16 +162,33 @@ async def check_bot_futures(symbol: str, bot_dir: str):
                     }
                     break
 
-        # Open Orders
-        open_orders = await exchange.fapiPrivateGetOpenOrders({'symbol': symbol_raw})
+        # Open Orders (Algo & Normal)
         sl_order = None
         tp_order = None
-        for o in open_orders:
-            ot = o.get('type')
-            if ot in ['STOP_MARKET', 'STOP']:
-                sl_order = float(o.get('stopPrice', 0.0))
-            elif ot in ['TAKE_PROFIT_MARKET', 'TAKE_PROFIT']:
-                tp_order = float(o.get('stopPrice', 0.0))
+        try:
+            algo_orders = await exchange.fapiPrivateGetOpenAlgoOrders({'symbol': symbol_raw})
+            for o in algo_orders:
+                ot = str(o.get('orderType', '')).upper()
+                tp = float(o.get('triggerPrice', 0.0))
+                if 'STOP' in ot:
+                    sl_order = tp
+                elif 'PROFIT' in ot:
+                    tp_order = tp
+        except Exception:
+            pass
+            
+        if not sl_order or not tp_order:
+            try:
+                open_orders = await exchange.fapiPrivateGetOpenOrders({'symbol': symbol_raw})
+                for o in open_orders:
+                    ot = str(o.get('type', '')).upper()
+                    sp = float(o.get('stopPrice', 0.0))
+                    if 'STOP' in ot and not sl_order:
+                        sl_order = sp
+                    elif 'PROFIT' in ot and not tp_order:
+                        tp_order = sp
+            except Exception:
+                pass
 
         await exchange.close()
         return {
@@ -165,7 +197,8 @@ async def check_bot_futures(symbol: str, bot_dir: str):
             "balance": usdt_bal,
             "position": pos_data,
             "sl_order": sl_order,
-            "tp_order": tp_order
+            "tp_order": tp_order,
+            "risk_pct": risk_pct
         }
     except Exception as e:
         return {"status": f"ERROR: {str(e)[:50]}", "balance": 0.0, "position": None}
@@ -207,6 +240,7 @@ async def generate_health_report():
     msg += f"🪙 <b>3. VÍ & VỊ THẾ XRP (Bắt Đáy/Đỉnh):</b>\n"
     msg += f"• Kết nối sàn: <code>{xrp_bot.get('status')} ({xrp_bot.get('latency', 'N/A')})</code>\n"
     msg += f"• Số dư ví Futures: <b>${xrp_bot.get('balance', 0.0):,.2f} USDT</b>\n"
+    msg += f"• Mức rủi ro cấu hình: <b>{xrp_bot.get('risk_pct', 10.0):.1f}% / lệnh</b>\n"
     
     pos_xrp = xrp_bot.get("position")
     if not pos_xrp:
@@ -236,6 +270,7 @@ async def generate_health_report():
     msg += f"🌊 <b>4. VÍ & VỊ THẾ SOL (Cưỡi Sóng):</b>\n"
     msg += f"• Kết nối sàn: <code>{sol_bot.get('status')} ({sol_bot.get('latency', 'N/A')})</code>\n"
     msg += f"• Số dư ví Futures: <b>${sol_bot.get('balance', 0.0):,.2f} USDT</b>\n"
+    msg += f"• Mức rủi ro cấu hình: <b>{sol_bot.get('risk_pct', 10.0):.1f}% / lệnh</b>\n"
     
     pos_sol = sol_bot.get("position")
     if not pos_sol:

@@ -136,8 +136,16 @@ class TradingEngine:
             risk_per_coin = abs(entry_price - sl_price)
         else:
             return
-            
-        current_risk_pct = risk_pct if risk_pct is not None else 3.0
+        # Fetch user-configured risk_pct from Settings
+        db = SessionLocal()
+        settings = db.query(Settings).first()
+        db.close()
+        if settings and settings.risk_pct is not None:
+            current_risk_pct = float(settings.risk_pct)
+        elif risk_pct is not None:
+            current_risk_pct = float(risk_pct)
+        else:
+            current_risk_pct = 10.0
 
         balance = await self.exchange.get_balance('USDT')
         risk_amount = balance * (current_risk_pct / 100)
@@ -392,6 +400,11 @@ class TradingEngine:
         await self.manage_open_trades()
 
         try:
+            db = SessionLocal()
+            settings = db.query(Settings).first()
+            db.close()
+            configured_risk = float(settings.risk_pct) if settings and settings.risk_pct is not None else 10.0
+
             if bot_mode == "XRP":
                 from engine.strategies.xrp_nada_final import check_xrp_signal
                 xrp_data = await self.exchange.fetch_ohlcv("XRP/USDT", '5m', 1500)
@@ -402,7 +415,7 @@ class TradingEngine:
                 if signal in ["LONG", "SHORT"] and self.last_trade_time.get("XRP") != last_time:
                     self.last_trade_time["XRP"] = last_time
                     if self.is_running:
-                        await self.execute_trade("XRP/USDT", "XRP", 3.0, xrp_df, 1.0, side=signal)
+                        await self.execute_trade("XRP/USDT", "XRP", configured_risk, xrp_df, 1.0, side=signal)
                         
             elif bot_mode == "SOL":
                 from engine.strategies.sol_supertrend import check_sol_signal
@@ -416,7 +429,7 @@ class TradingEngine:
                     if self.is_running:
                         self.log(f"SOL Supertrend flipped to {signal}! Closing existing positions and opening new...")
                         await self.exchange.close_position("SOL/USDT")
-                        await self.execute_trade("SOL/USDT", "SOL", 3.0, sol_df, 1.0, side=signal)
+                        await self.execute_trade("SOL/USDT", "SOL", configured_risk, sol_df, 1.0, side=signal)
                         
         except Exception as e:
             self.log(f"Error in engine loop: {e}", "ERROR")
