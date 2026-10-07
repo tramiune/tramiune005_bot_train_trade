@@ -77,14 +77,17 @@ async def binance_ws_loop():
             last_candle_time = candle_time
             
             now_ts = int(time.time())
-            seconds_to_next_candle = loop_interval - (now_ts % loop_interval)
+            seconds_into_candle = now_ts % loop_interval
+            seconds_to_next_candle = loop_interval - seconds_into_candle
             
-            if seconds_to_next_candle > 10:
-                await asyncio.sleep(10)
-            elif seconds_to_next_candle > 3:
-                await asyncio.sleep(2)
-            else:
+            # Đón nến đóng siêu tốc: Trong 3s trước khi đóng nến và 6s đầu nến mới,
+            # bot thăm dò dồn dập mỗi 0.5s (500ms). Sàn vừa chốt lúc :01 là bot bắt ngay lập tức!
+            if seconds_into_candle <= 6 or seconds_to_next_candle <= 3:
                 await asyncio.sleep(0.5)
+            elif seconds_to_next_candle > 10:
+                await asyncio.sleep(8)
+            else:
+                await asyncio.sleep(1.5)
                 
         except Exception as e:
             print(f"REST Polling error: {e}. Retrying in 5s...")
